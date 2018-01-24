@@ -1,0 +1,7 @@
+resolver: lts-10.1
+packages:
+- .
+extra-include-dirs:
+  - /usr/local/include
+extra-lib-dirs:
+  - /usr/local/lib
