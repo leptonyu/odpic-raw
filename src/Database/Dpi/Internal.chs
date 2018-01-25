@@ -2,21 +2,131 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE DuplicateRecordFields    #-}
+{-# LANGUAGE OverloadedStrings        #-}
 
 module Database.Dpi.Internal where
 
-import Foreign
-import Foreign.C.Types
+import Control.Exception
+import Database.Dpi.Prelude
+import Data.ByteString.Char8(unpack)
+import qualified Data.ByteString as B
 
 #include <dpi.h>
 
 {#context prefix="dpi" #}
+
+majorVersion :: CUInt
+majorVersion = {#const DPI_MAJOR_VERSION #}
+
+minorVersion :: CUInt
+minorVersion = {#const DPI_MINOR_VERSION #}
+
+success :: CInt
+success = {#const DPI_SUCCESS #}
+
+isOk :: CInt -> Bool
+isOk = (== success)
+
+peekInt :: (Num n, Integral a, Storable a) => Ptr a -> IO n
+peekInt p = fromIntegral <$> peek p
+
+peekBool :: Ptr CInt -> IO Bool
+peekBool p = isOk <$> peek p
 
 noImplement :: a
 noImplement = error "Not supported yet"
 
 te :: (Integral n, Enum e) => n -> e
 te = toEnum . fromIntegral
+
+ts :: Ptr CChar -> CUInt -> IO ByteString
+ts p l | nullPtr == p = return ""
+       | otherwise    = packCStringLen (p, fromIntegral l)
+
+tb :: Ptr CChar -> IO ByteString
+tb p | nullPtr == p = return ""
+     | otherwise    = packCString p
+
+fs :: ByteString -> IO CString
+fs s | B.null s    = return nullPtr
+     | otherwise = newCString $ unpack s
+
+fb :: ByteString -> IO CStringLen
+fb s | B.null s    = return (nullPtr,0)
+     | otherwise = newCStringLen $ unpack s
+
+data DpiException
+  = ErrorInfoException Data_ErrorInfo
+  | VersionInfoNotFound
+  | ConnectionCreateFailed
+  | StatementCreateFailed
+  | ConnectionPropNotFound ByteString
+  | StatementExecuteFailed
+  | StatementFetchFailed
+  | StatementFetchRowFailed
+  | StatementGetBatchErrorFailed
+  | StatementGetBindFailed
+  | LobOperateFailed
+  | ObjectOperateFailed
+  | TransactionPrepareFailed
+  deriving Show
+
+instance Exception DpiException
+
+_getConnValue :: (PtrConn -> Ptr (Ptr CChar) -> Ptr CUInt -> IO ByteString -> IO a) -> PtrConn -> IO a
+_getConnValue f p
+  = alloca $ \ps ->
+    alloca $ \pslen -> f p ps pslen (join $ ts <$> peek ps <*> peek pslen)
+
+_getConn :: ByteString -> (PtrConn -> Ptr (Ptr CChar) -> Ptr CUInt -> IO CInt) -> PtrConn -> IO ByteString
+_getConn key f = _getConnValue $ go key f
+  where
+    go key f p ps pslen pstr = do
+      ok <- isOk <$> f p ps pslen
+      if ok then pstr else throw $ ConnectionPropNotFound key
+
+_getConnStrAndObj :: Storable a
+                  => (PtrConn -> Ptr (Ptr CChar) -> Ptr CUInt -> Ptr a -> IO CInt)
+                  -> ByteString
+                  -> PtrConn
+                  -> IO (ByteString, a)
+_getConnStrAndObj f key = _getConnValue (go key f)
+  where
+    go key f p ps pslen pstr = alloca $ \pv -> do
+      ok <- isOk <$> f p ps pslen pv
+      if ok
+        then do
+          s <- pstr
+          v <- peek pv
+          return (s,v)
+        else throw $ ConnectionPropNotFound key
+
+_get' :: Storable a => DpiException -> (Ptr p -> Ptr a -> IO CInt) -> (Ptr a -> IO b) -> Ptr p -> IO b
+_get' e f v p
+  = alloca $ \pc -> do
+      ok <- isOk <$> f p pc
+      if ok then v pc else throw e
+
+
+_getStmt :: Storable a => (PtrStmt -> Ptr a -> IO CInt) -> (Ptr a -> IO b) -> PtrStmt -> IO b
+_getStmt = _get' StatementFetchFailed
+
+-- GetData
+_get :: NativeTypeNum -> PtrData -> IO DataValue
+_get t p = do
+  Data get <- peek p
+  get t
+
+_objIndex :: (PtrObject -> Ptr CInt -> Ptr CInt -> IO CInt) -> PtrObject -> IO (Maybe Int)
+_objIndex f p
+  = alloca $ \pi ->
+    alloca $ \pe -> do
+      ok <- isOk <$> f p pi pe
+      if ok
+        then do
+          e <- peekBool pe
+          if e then (Just .fromIntegral) <$> peek pi else return Nothing
+        else throw ObjectOperateFailed
 
 -- Enum
 {#enum AuthMode            as ^ {underscoreToCase} deriving (Show) #}
@@ -60,6 +170,21 @@ te = toEnum . fromIntegral
 
 {#pointer *Context    as DPI_Context    foreign newtype #}
 
+type PtrConn       = Ptr DPI_Conn
+type PtrPool       = Ptr DPI_Pool
+type PtrStmt       = Ptr DPI_Stmt
+type PtrVar        = Ptr DPI_Var
+type PtrLob        = Ptr DPI_Lob
+type PtrObject     = Ptr DPI_Object
+type PtrObjectAttr = Ptr DPI_ObjectAttr
+type PtrObjectType = Ptr DPI_ObjectType
+type PtrRowid      = Ptr DPI_Rowid
+type PtrSubscr     = Ptr DPI_Subscr
+type PtrDeqOptions = Ptr DPI_DeqOptions
+type PtrEnqOptions = Ptr DPI_EnqOptions
+type PtrMsgProps   = Ptr DPI_MsgProps
+type PtrContext    = Ptr DPI_Context
+
 --        Inner               Data
 {#pointer *Bytes      as Ptr_Bytes      -> Data_Bytes      #}
 {#pointer *IntervalDS as Ptr_IntervalDS -> Data_IntervalDS #}
@@ -67,9 +192,8 @@ te = toEnum . fromIntegral
 {#pointer *Timestamp  as Ptr_Timestamp  -> Data_Timestamp  #}
 
 data Data_Bytes = Data_Bytes
-  { ptr      :: Ptr CChar
-  , length   :: CUInt
-  , encoding :: Ptr CChar
+  { bytes    :: ByteString
+  , encoding :: ByteString
   } deriving Show
 
 instance Storable Data_Bytes where
@@ -79,7 +203,8 @@ instance Storable Data_Bytes where
   peek      p = do
     ptr      <- {#get Bytes -> ptr      #} p
     length   <- {#get Bytes -> length   #} p
-    encoding <- {#get Bytes -> encoding #} p
+    encoding <- {#get Bytes -> encoding #} p >>= tb
+    bytes    <- ts ptr length
     return Data_Bytes {..}
 
 data Data_IntervalDS = Data_IntervalDS
@@ -148,7 +273,7 @@ instance Storable Data_Timestamp where
 {#pointer *AppContext         as PtrAppContext         -> Data_AppContext         #}
 {#pointer *CommonCreateParams as PtrCommonCreateParams -> Data_CommonCreateParams #}
 {#pointer *ConnCreateParams   as PtrConnCreateParams   -> Data_ConnCreateParams   #}
-{#pointer *Data               as PtrNullableDataBuffer -> NullableDataBuffer      #}
+{#pointer *Data               as PtrData               -> Data                    #}
 {#pointer *DataTypeInfo       as PtrDataTypeInfo       -> Data_DataTypeInfo       #}
 {#pointer *EncodingInfo       as PtrEncodingInfo       -> Data_EncodingInfo       #}
 {#pointer *ErrorInfo          as PtrErrorInfo          -> Data_ErrorInfo          #}
@@ -166,12 +291,9 @@ instance Storable Data_Timestamp where
 {#pointer *VersionInfo        as PtrVersionInfo        -> Data_VersionInfo        #}
 
 data Data_AppContext  = Data_AppContext
-  { namespaceName       :: Ptr CChar
-  , namespaceNameLength :: CUInt
-  , name                :: Ptr CChar
-  , nameLength          :: CUInt
-  , value               :: Ptr CChar
-  , valueLength         :: CUInt
+  { namespaceName       :: ByteString
+  , name                :: ByteString
+  , value               :: ByteString
   } deriving Show
 
 instance Storable Data_AppContext where
@@ -179,55 +301,65 @@ instance Storable Data_AppContext where
   alignment _ = {#alignof AppContext #}
   poke      _ = noImplement
   peek      p = do
-    namespaceName       <- {#get AppContext -> namespaceName       #} p
+    namespaceName'      <- {#get AppContext -> namespaceName       #} p
     namespaceNameLength <- {#get AppContext -> namespaceNameLength #} p
-    name                <- {#get AppContext -> name                #} p
+    name'               <- {#get AppContext -> name                #} p
     nameLength          <- {#get AppContext -> nameLength          #} p
-    value               <- {#get AppContext -> value               #} p
+    value'              <- {#get AppContext -> value               #} p
     valueLength         <- {#get AppContext -> valueLength         #} p
+    namespaceName <- ts namespaceName' namespaceNameLength
+    name          <- ts name'          nameLength
+    value         <- ts value'         valueLength
     return Data_AppContext {..}
 
 data Data_CommonCreateParams  = Data_CommonCreateParams
   { createMode       :: CreateMode
-  , encoding         :: Ptr CChar
-  , nencoding        :: Ptr CChar
-  , edition          :: Ptr CChar
-  , editionLength    :: CUInt
-  , driverName       :: Ptr CChar
-  , driverNameLength :: CUInt
+  , encoding         :: ByteString
+  , nencoding        :: ByteString
+  , edition          :: ByteString
+  , driverName       :: ByteString
   } deriving Show
 
 instance Storable Data_CommonCreateParams where
   sizeOf    _ = {#sizeof  CommonCreateParams #}
   alignment _ = {#alignof CommonCreateParams #}
-  poke      _ = noImplement
+  poke    p Data_CommonCreateParams{..} = do
+    pe       <- fs encoding  
+    pn       <- fs nencoding 
+    (e,elen) <- fb edition   
+    (d,dlen) <- fb driverName
+    {#set CommonCreateParams -> createMode       #} p (fe createMode)
+    {#set CommonCreateParams -> encoding         #} p pe
+    {#set CommonCreateParams -> nencoding        #} p pn
+    {#set CommonCreateParams -> edition          #} p e
+    {#set CommonCreateParams -> editionLength    #} p (fromIntegral elen)
+    {#set CommonCreateParams -> driverName       #} p d
+    {#set CommonCreateParams -> driverNameLength #} p (fromIntegral dlen)
   peek      p = do
     createMode       <- te <$> {#get CommonCreateParams -> createMode       #} p
-    encoding         <- {#get CommonCreateParams -> encoding         #} p
-    nencoding        <- {#get CommonCreateParams -> nencoding        #} p
-    edition          <- {#get CommonCreateParams -> edition          #} p
+    encoding         <- {#get CommonCreateParams -> encoding         #} p >>= tb
+    nencoding        <- {#get CommonCreateParams -> nencoding        #} p >>= tb
+    edition'         <- {#get CommonCreateParams -> edition          #} p
     editionLength    <- {#get CommonCreateParams -> editionLength    #} p
-    driverName       <- {#get CommonCreateParams -> driverName       #} p
+    driverName'      <- {#get CommonCreateParams -> driverName       #} p
     driverNameLength <- {#get CommonCreateParams -> driverNameLength #} p
+    edition    <- ts edition'    editionLength
+    driverName <- ts driverName' driverNameLength
     return Data_CommonCreateParams {..}
 
 data Data_ConnCreateParams  = Data_ConnCreateParams
   { authMode                   :: AuthMode
-  , connectionClass            :: Ptr CChar
-  , connectionClassLength      :: CUInt
+  , connectionClass            :: ByteString
   , purity                     :: Purity
-  , newPassword                :: Ptr CChar
-  , newPasswordLength          :: CUInt
+  , newPassword                :: ByteString
   , appContext                 :: PtrAppContext
   , numAppContext              :: CUInt
   , externalAuth               :: CInt
   , externalHandle             :: Ptr ()
-  , pool                       :: Ptr DPI_Pool
-  , tag                        :: Ptr CChar
-  , tagLength                  :: CUInt
+  , pool                       :: PtrPool
+  , tag                        :: ByteString
   , matchAnyTag                :: CInt
-  , outTag                     :: Ptr CChar
-  , outTagLength               :: CUInt
+  , outTag                     :: ByteString
   , outTagFound                :: CInt
   , shardingKeyColumns         :: PtrShardingKeyColumn
   , numShardingKeyColumns      :: CUChar
@@ -241,83 +373,159 @@ instance Storable Data_ConnCreateParams where
   poke      _ = noImplement
   peek      p = do
     authMode                   <- te <$> {#get ConnCreateParams -> authMode                   #} p
-    connectionClass            <- {#get ConnCreateParams -> connectionClass            #} p
+    connectionClass'           <- {#get ConnCreateParams -> connectionClass            #} p
     connectionClassLength      <- {#get ConnCreateParams -> connectionClassLength      #} p
     purity                     <- te <$> {#get ConnCreateParams -> purity                     #} p
-    newPassword                <- {#get ConnCreateParams -> newPassword                #} p
+    newPassword'               <- {#get ConnCreateParams -> newPassword                #} p
     newPasswordLength          <- {#get ConnCreateParams -> newPasswordLength          #} p
     appContext                 <- {#get ConnCreateParams -> appContext                 #} p
     numAppContext              <- {#get ConnCreateParams -> numAppContext              #} p
     externalAuth               <- {#get ConnCreateParams -> externalAuth               #} p
     externalHandle             <- {#get ConnCreateParams -> externalHandle             #} p
     pool                       <- {#get ConnCreateParams -> pool                       #} p
-    tag                        <- {#get ConnCreateParams -> tag                        #} p
+    tag'                       <- {#get ConnCreateParams -> tag                        #} p
     tagLength                  <- {#get ConnCreateParams -> tagLength                  #} p
     matchAnyTag                <- {#get ConnCreateParams -> matchAnyTag                #} p
-    outTag                     <- {#get ConnCreateParams -> outTag                     #} p
+    outTag'                    <- {#get ConnCreateParams -> outTag                     #} p
     outTagLength               <- {#get ConnCreateParams -> outTagLength               #} p
     outTagFound                <- {#get ConnCreateParams -> outTagFound                #} p
     shardingKeyColumns         <- {#get ConnCreateParams -> shardingKeyColumns         #} p
     numShardingKeyColumns      <- {#get ConnCreateParams -> numShardingKeyColumns      #} p
     superShardingKeyColumns    <- {#get ConnCreateParams -> superShardingKeyColumns    #} p
     numSuperShardingKeyColumns <- {#get ConnCreateParams -> numSuperShardingKeyColumns #} p
+    connectionClass <- ts connectionClass' connectionClassLength
+    newPassword     <- ts newPassword'     newPasswordLength
+    tag             <- ts tag'             tagLength
+    outTag          <- ts outTag'          outTagLength
     return Data_ConnCreateParams {..}
 
 data DataValue
-  = DataNull
+  = DataNull       NativeTypeNum
   | DataInt64      CLLong
   | DataUint64     CULLong
   | DataFloat      CFloat
   | DataDouble     CDouble
-  | DataBytes      Ptr_Bytes
-  | DataTimestamp  Ptr_Timestamp
-  | DataIntervalDs Ptr_IntervalDS
-  | DataIntervalYm Ptr_IntervalYM
-  | DataLob        (Ptr DPI_Lob)
-  | DataObject     (Ptr DPI_Object)
-  | DataStmt       (Ptr DPI_Stmt)
+  | DataBytes      Data_Bytes
+  | DataTimestamp  Data_Timestamp
+  | DataIntervalDs Data_IntervalDS
+  | DataIntervalYm Data_IntervalYM
+  | DataLob        PtrLob
+  | DataObject     PtrObject
+  | DataStmt       PtrStmt
   | DataBoolean    Bool
-  | DataRowid      (Ptr DPI_Rowid)
+  | DataRowid      PtrRowid
+  deriving Show
 
-newtype DataBuffer = DataBuffer (NativeTypeNum -> IO DataValue)
+newData :: DataValue -> IO (NativeTypeNum, PtrData)
+newData d = do
+  pd <- malloc
+  let tp = go d
+  poke pd (Data $ \_ -> return d)
+  return (tp, pd)
+  where
+    go (DataNull       t) = t
+    go (DataInt64      _) = NativeTypeInt64
+    go (DataUint64     _) = NativeTypeUint64
+    go (DataFloat      _) = NativeTypeFloat
+    go (DataDouble     _) = NativeTypeDouble
+    go (DataBytes      _) = NativeTypeBytes
+    go (DataTimestamp  _) = NativeTypeTimestamp
+    go (DataIntervalDs _) = NativeTypeIntervalDs
+    go (DataIntervalYm _) = NativeTypeIntervalYm
+    go (DataLob        _) = NativeTypeLob
+    go (DataObject     _) = NativeTypeObject
+    go (DataStmt       _) = NativeTypeStmt
+    go (DataBoolean    _) = NativeTypeBoolean
+    go (DataRowid      _) = NativeTypeRowid
 
-instance Storable DataBuffer where
-  sizeOf    _ = {#sizeof  DataBuffer #}
-  alignment _ = {#alignof DataBuffer #}
-  poke      _ = noImplement
-  peek      p = return $ DataBuffer $ go p
-    where
-      go p NativeTypeInt64      = DataInt64       <$>       {#get DataBuffer ->         asInt64  #}           p
-      go p NativeTypeUint64     = DataUint64      <$>       {#get DataBuffer ->         asUint64 #}           p
-      go p NativeTypeFloat      = DataFloat       <$>       {#get DataBuffer ->         asFloat  #}           p
-      go p NativeTypeDouble     = DataDouble      <$>       {#get DataBuffer ->         asDouble #}           p
-      go p NativeTypeBytes      = (DataBytes      .castPtr) <$>   {#get      DataBuffer ->       asBytes      #} p
-      go p NativeTypeTimestamp  = (DataTimestamp  .castPtr) <$>   {#get      DataBuffer ->       asTimestamp  #} p
-      go p NativeTypeIntervalDs = (DataIntervalDs .castPtr) <$>   {#get      DataBuffer ->       asIntervalDS #} p
-      go p NativeTypeIntervalYm = (DataIntervalYm .castPtr) <$>   {#get      DataBuffer ->       asIntervalYM #} p
-      go p NativeTypeLob        = DataLob         <$>       {#get DataBuffer ->         asLOB    #}           p
-      go p NativeTypeObject     = DataObject      <$>       {#get DataBuffer ->         asObject #}           p
-      go p NativeTypeStmt       = DataStmt        <$>       {#get DataBuffer ->         asStmt   #}           p
-      go p NativeTypeBoolean    = (DataBoolean    .toBool)  <$>   {#get      DataBuffer ->       asBoolean    #} p
-      go p NativeTypeRowid      = DataRowid       <$>       {#get DataBuffer ->         asRowid  #}           p
-      -- go _ _                    = noImplement
+newtype Data = Data (NativeTypeNum -> IO DataValue)
 
-newtype NullableDataBuffer = NullableDataBuffer (NativeTypeNum -> IO DataValue)
-
-instance Storable NullableDataBuffer where
+instance Storable Data where
   sizeOf    _ = {#sizeof  Data #}
   alignment _ = {#alignof Data #}
-  poke      _ = noImplement
-  peek      p = return $ NullableDataBuffer $ go p
+  poke      p (Data f) = do
+    d <- f NativeTypeBoolean
+    go p d
     where
-      go p t = do
+      go p (DataNull       _) = {#set Data -> isNull             #} p 1
+      go p (DataInt64      v) = {#set Data -> value.asInt64      #} p v
+      go p (DataUint64     v) = {#set Data -> value.asUint64     #} p v
+      go p (DataFloat      v) = {#set Data -> value.asFloat      #} p v
+      go p (DataDouble     v) = {#set Data -> value.asDouble     #} p v
+      go p (DataBytes      (Data_Bytes {..})) = do
+        (b,bl) <- fb bytes
+        e      <- fs encoding
+        {#set Data -> value.asBytes.ptr      #} p b
+        {#set Data -> value.asBytes.length   #} p (fromIntegral bl)
+        {#set Data -> value.asBytes.encoding #} p e
+      go p (DataTimestamp  (Data_Timestamp {..})) = do
+        {#set Data -> value.asTimestamp.year           #} p year          
+        {#set Data -> value.asTimestamp.month          #} p month         
+        {#set Data -> value.asTimestamp.day            #} p day           
+        {#set Data -> value.asTimestamp.hour           #} p hour          
+        {#set Data -> value.asTimestamp.minute         #} p minute        
+        {#set Data -> value.asTimestamp.second         #} p second        
+        {#set Data -> value.asTimestamp.fsecond        #} p fsecond       
+        {#set Data -> value.asTimestamp.tzHourOffset   #} p tzHourOffset  
+        {#set Data -> value.asTimestamp.tzMinuteOffset #} p tzMinuteOffset
+      go p (DataIntervalDs (Data_IntervalDS {..})) = do
+        {#set Data -> value.asIntervalDS.days     #} p days    
+        {#set Data -> value.asIntervalDS.hours    #} p hours   
+        {#set Data -> value.asIntervalDS.minutes  #} p minutes 
+        {#set Data -> value.asIntervalDS.seconds  #} p seconds 
+        {#set Data -> value.asIntervalDS.fseconds #} p fseconds
+      go p (DataIntervalYm (Data_IntervalYM {..})) = do
+        {#set Data -> value.asIntervalYM.years    #} p  years 
+        {#set Data -> value.asIntervalYM.months   #} p  months
+      go p (DataLob        v) = {#set Data -> value.asLOB        #} p v
+      go p (DataObject     v) = {#set Data -> value.asObject#}   p  v
+      go p (DataStmt       v) = {#set Data -> value.asStmt       #} p v
+      go p (DataRowid      v) = {#set Data -> value.asRowid      #} p v
+      go p (DataBoolean    v) = {#set Data -> value.asBoolean    #} p (fromBool v)
+  peek      p = return $ Data $ go' p
+    where
+      go' p t = do
         isNull <- toBool <$> {#get Data -> isNull #} p
         if isNull 
-          then return DataNull
-          else do
-            p'           <- castPtr <$> {#get Data -> value #} p
-            DataBuffer v <- peek p'
-            v t
+          then return $ DataNull t
+          else go p t
+      go p NativeTypeInt64      = DataInt64      <$> {#get Data -> value.asInt64      #} p
+      go p NativeTypeUint64     = DataUint64     <$> {#get Data -> value.asUint64     #} p
+      go p NativeTypeFloat      = DataFloat      <$> {#get Data -> value.asFloat      #} p
+      go p NativeTypeDouble     = DataDouble     <$> {#get Data -> value.asDouble     #} p
+      go p NativeTypeBytes      = DataBytes      <$> do
+        ptr      <- {#get Data -> value.asBytes.ptr      #} p
+        length   <- {#get Data -> value.asBytes.length   #} p
+        encoding <- {#get Data -> value.asBytes.encoding #} p >>= tb
+        bytes    <- ts ptr length
+        return Data_Bytes {..}
+      go p NativeTypeTimestamp  = DataTimestamp  <$> do
+        year           <- {#get Data -> value.asTimestamp.year           #} p
+        month          <- {#get Data -> value.asTimestamp.month          #} p
+        day            <- {#get Data -> value.asTimestamp.day            #} p
+        hour           <- {#get Data -> value.asTimestamp.hour           #} p
+        minute         <- {#get Data -> value.asTimestamp.minute         #} p
+        second         <- {#get Data -> value.asTimestamp.second         #} p
+        fsecond        <- {#get Data -> value.asTimestamp.fsecond        #} p
+        tzHourOffset   <- {#get Data -> value.asTimestamp.tzHourOffset   #} p
+        tzMinuteOffset <- {#get Data -> value.asTimestamp.tzMinuteOffset #} p
+        return Data_Timestamp {..}
+      go p NativeTypeIntervalDs = DataIntervalDs <$> do
+        days     <- {#get Data -> value.asIntervalDS.days     #} p
+        hours    <- {#get Data -> value.asIntervalDS.hours    #} p
+        minutes  <- {#get Data -> value.asIntervalDS.minutes  #} p
+        seconds  <- {#get Data -> value.asIntervalDS.seconds  #} p
+        fseconds <- {#get Data -> value.asIntervalDS.fseconds #} p
+        return Data_IntervalDS {..}
+      go p NativeTypeIntervalYm = DataIntervalYm <$> do
+        years    <- {#get Data -> value.asIntervalYM.years    #} p
+        months   <- {#get Data -> value.asIntervalYM.months   #} p
+        return Data_IntervalYM {..}
+      go p NativeTypeLob        = DataLob        <$> {#get Data -> value.asLOB        #} p
+      go p NativeTypeObject     = DataObject     <$> {#get Data -> value.asObject     #} p
+      go p NativeTypeStmt       = DataStmt       <$> {#get Data -> value.asStmt       #} p
+      go p NativeTypeRowid      = DataRowid      <$> {#get Data -> value.asRowid      #} p
+      go p NativeTypeBoolean    = (DataBoolean .toBool)<$> {#get Data -> value.asBoolean    #} p
 
 data Data_DataTypeInfo  = Data_DataTypeInfo
   { oracleTypeNum        :: OracleTypeNum
@@ -329,7 +537,7 @@ data Data_DataTypeInfo  = Data_DataTypeInfo
   , precision            :: CShort
   , scale                :: CSChar
   , fsPrecision          :: CUChar
-  , objectType           :: Ptr DPI_ObjectType
+  , objectType           :: PtrObjectType
   } deriving Show
 
 instance Storable Data_DataTypeInfo where
@@ -351,9 +559,9 @@ instance Storable Data_DataTypeInfo where
 
 
 data Data_EncodingInfo  = Data_EncodingInfo
-  { encoding              :: Ptr CChar
+  { encoding              :: ByteString
   , maxBytesPerCharacter  :: CInt
-  , nencoding             :: Ptr CChar
+  , nencoding             :: ByteString
   , nmaxBytesPerCharacter :: CInt
   } deriving Show
 
@@ -362,21 +570,20 @@ instance Storable Data_EncodingInfo where
   alignment _ = {#alignof EncodingInfo #}
   poke      _ = noImplement
   peek      p = do
-    encoding              <- {#get EncodingInfo -> encoding              #} p
+    encoding              <- {#get EncodingInfo -> encoding              #} p >>= tb
     maxBytesPerCharacter  <- {#get EncodingInfo -> maxBytesPerCharacter  #} p
-    nencoding             <- {#get EncodingInfo -> nencoding             #} p
+    nencoding             <- {#get EncodingInfo -> nencoding             #} p >>= tb
     nmaxBytesPerCharacter <- {#get EncodingInfo -> nmaxBytesPerCharacter #} p
     return Data_EncodingInfo {..}
 
 data Data_ErrorInfo  = Data_ErrorInfo
   { code          :: CInt
   , offset        :: CUShort
-  , message       :: Ptr CChar
-  , messageLength :: CUInt
-  , encoding      :: Ptr CChar
-  , fnName        :: Ptr CChar
-  , action        :: Ptr CChar
-  , sqlState      :: Ptr CChar
+  , message       :: ByteString
+  , encoding      :: ByteString
+  , fnName        :: ByteString
+  , action        :: ByteString
+  , sqlState      :: ByteString
   , isRecoverable :: Bool
   } deriving Show
 
@@ -387,19 +594,19 @@ instance Storable Data_ErrorInfo where
   peek      p = do
     code          <- {#get ErrorInfo -> code          #} p
     offset        <- {#get ErrorInfo -> offset        #} p
-    message       <- {#get ErrorInfo -> message       #} p
+    message'      <- {#get ErrorInfo -> message       #} p
     messageLength <- {#get ErrorInfo -> messageLength #} p
-    encoding      <- {#get ErrorInfo -> encoding      #} p
-    fnName        <- {#get ErrorInfo -> fnName        #} p
-    action        <- {#get ErrorInfo -> action        #} p
-    sqlState      <- {#get ErrorInfo -> sqlState      #} p
+    encoding      <- {#get ErrorInfo -> encoding      #} p >>= tb
+    fnName        <- {#get ErrorInfo -> fnName        #} p >>= tb
+    action        <- {#get ErrorInfo -> action        #} p >>= tb
+    sqlState      <- {#get ErrorInfo -> sqlState      #} p >>= tb
     isRecoverable <- toBool <$> {#get ErrorInfo -> isRecoverable #} p
+    message       <- ts message' messageLength
     return Data_ErrorInfo {..}
 
 data Data_ObjectAttrInfo  = Data_ObjectAttrInfo
-  { name       :: Ptr CChar
-  , nameLength :: CUInt
-  , typeInfo   :: PtrDataTypeInfo
+  { name       :: ByteString
+  , typeInfo   :: Data_DataTypeInfo
   } deriving Show
 
 instance Storable Data_ObjectAttrInfo where
@@ -407,18 +614,28 @@ instance Storable Data_ObjectAttrInfo where
   alignment _ = {#alignof ObjectAttrInfo #}
   poke      _ = noImplement
   peek      p = do
-    name       <- {#get ObjectAttrInfo -> name       #} p
+    name'      <- {#get ObjectAttrInfo -> name       #} p
     nameLength <- {#get ObjectAttrInfo -> nameLength #} p
-    typeInfo   <- castPtr <$> {#get ObjectAttrInfo -> typeInfo   #} p
+    typeInfo   <- do
+      oracleTypeNum        <- te <$> {#get ObjectAttrInfo -> typeInfo.oracleTypeNum        #} p
+      defaultNativeTypeNum <- te <$> {#get ObjectAttrInfo -> typeInfo.defaultNativeTypeNum #} p
+      ociTypeCode          <-        {#get ObjectAttrInfo -> typeInfo.ociTypeCode          #} p
+      dbSizeInBytes        <-        {#get ObjectAttrInfo -> typeInfo.dbSizeInBytes        #} p
+      clientSizeInBytes    <-        {#get ObjectAttrInfo -> typeInfo.clientSizeInBytes    #} p
+      sizeInChars          <-        {#get ObjectAttrInfo -> typeInfo.sizeInChars          #} p
+      precision            <-        {#get ObjectAttrInfo -> typeInfo.precision            #} p
+      scale                <-        {#get ObjectAttrInfo -> typeInfo.scale                #} p
+      fsPrecision          <-        {#get ObjectAttrInfo -> typeInfo.fsPrecision          #} p
+      objectType           <-        {#get ObjectAttrInfo -> typeInfo.objectType           #} p
+      return Data_DataTypeInfo {..}
+    name       <- ts name' nameLength
     return Data_ObjectAttrInfo {..}
 
 data Data_ObjectTypeInfo  = Data_ObjectTypeInfo
-  { schema          :: Ptr CChar
-  , schemaLength    :: CUInt
-  , name            :: Ptr CChar
-  , nameLength      :: CUInt
+  { schema          :: ByteString
+  , name            :: ByteString
   , isCollection    :: Bool
-  , elementTypeInfo :: PtrDataTypeInfo
+  , elementTypeInfo :: Data_DataTypeInfo
   , numAttributes   :: CUShort
   } deriving Show
 
@@ -427,13 +644,26 @@ instance Storable Data_ObjectTypeInfo where
   alignment _ = {#alignof ObjectAttrInfo #}
   poke      _ = noImplement
   peek      p = do
-    schema          <- {#get ObjectTypeInfo -> schema          #} p
+    schema'         <- {#get ObjectTypeInfo -> schema          #} p
     schemaLength    <- {#get ObjectTypeInfo -> schemaLength    #} p
-    name            <- {#get ObjectTypeInfo -> name            #} p
+    name'           <- {#get ObjectTypeInfo -> name            #} p
     nameLength      <- {#get ObjectTypeInfo -> nameLength      #} p
     isCollection    <- toBool  <$> {#get ObjectTypeInfo -> isCollection    #} p
-    elementTypeInfo <- castPtr <$> {#get ObjectTypeInfo -> elementTypeInfo #} p
+    elementTypeInfo <- do
+      oracleTypeNum        <- te <$> {#get ObjectTypeInfo -> elementTypeInfo.oracleTypeNum        #} p
+      defaultNativeTypeNum <- te <$> {#get ObjectTypeInfo -> elementTypeInfo.defaultNativeTypeNum #} p
+      ociTypeCode          <-        {#get ObjectTypeInfo -> elementTypeInfo.ociTypeCode          #} p
+      dbSizeInBytes        <-        {#get ObjectTypeInfo -> elementTypeInfo.dbSizeInBytes        #} p
+      clientSizeInBytes    <-        {#get ObjectTypeInfo -> elementTypeInfo.clientSizeInBytes    #} p
+      sizeInChars          <-        {#get ObjectTypeInfo -> elementTypeInfo.sizeInChars          #} p
+      precision            <-        {#get ObjectTypeInfo -> elementTypeInfo.precision            #} p
+      scale                <-        {#get ObjectTypeInfo -> elementTypeInfo.scale                #} p
+      fsPrecision          <-        {#get ObjectTypeInfo -> elementTypeInfo.fsPrecision          #} p
+      objectType           <-        {#get ObjectTypeInfo -> elementTypeInfo.objectType           #} p
+      return Data_DataTypeInfo {..}
     numAttributes   <- {#get ObjectTypeInfo -> numAttributes   #} p
+    schema          <- ts schema' schemaLength
+    name            <- ts name'   nameLength
     return Data_ObjectTypeInfo {..}
 
 data Data_PoolCreateParams  = Data_PoolCreateParams
@@ -445,8 +675,7 @@ data Data_PoolCreateParams  = Data_PoolCreateParams
   , homogeneous       :: CInt
   , externalAuth      :: CInt
   , getMode           :: PoolGetMode
-  , outPoolName       :: Ptr CChar
-  , outPoolNameLength :: CUInt
+  , outPoolName       :: ByteString
   } deriving Show
 
 instance Storable Data_PoolCreateParams where
@@ -462,14 +691,14 @@ instance Storable Data_PoolCreateParams where
     homogeneous       <- {#get PoolCreateParams -> homogeneous       #} p
     externalAuth      <- {#get PoolCreateParams -> externalAuth      #} p
     getMode           <- te <$> {#get PoolCreateParams -> getMode           #} p
-    outPoolName       <- {#get PoolCreateParams -> outPoolName       #} p
+    outPoolName'      <- {#get PoolCreateParams -> outPoolName       #} p
     outPoolNameLength <- {#get PoolCreateParams -> outPoolNameLength #} p
+    outPoolName       <- ts outPoolName' outPoolNameLength
     return Data_PoolCreateParams {..}
 
 data Data_QueryInfo = Data_QueryInfo
-  { name       :: Ptr CChar
-  , nameLength :: CUInt
-  , typeInfo   :: PtrDataTypeInfo
+  { name       :: ByteString
+  , typeInfo   :: Data_DataTypeInfo
   , nullOk     :: Bool
   } deriving Show
 
@@ -478,16 +707,28 @@ instance Storable Data_QueryInfo where
   alignment _ = {#alignof QueryInfo #}
   poke      _ = noImplement
   peek      p = do
-    name       <- {#get QueryInfo -> name       #} p
+    name'      <- {#get QueryInfo -> name       #} p
     nameLength <- {#get QueryInfo -> nameLength #} p
-    typeInfo   <- castPtr <$> {#get QueryInfo -> typeInfo   #} p
+    typeInfo   <- do
+      oracleTypeNum        <- te <$> {#get QueryInfo -> typeInfo.oracleTypeNum        #} p
+      defaultNativeTypeNum <- te <$> {#get QueryInfo -> typeInfo.defaultNativeTypeNum #} p
+      ociTypeCode          <-        {#get QueryInfo -> typeInfo.ociTypeCode          #} p
+      dbSizeInBytes        <-        {#get QueryInfo -> typeInfo.dbSizeInBytes        #} p
+      clientSizeInBytes    <-        {#get QueryInfo -> typeInfo.clientSizeInBytes    #} p
+      sizeInChars          <-        {#get QueryInfo -> typeInfo.sizeInChars          #} p
+      precision            <-        {#get QueryInfo -> typeInfo.precision            #} p
+      scale                <-        {#get QueryInfo -> typeInfo.scale                #} p
+      fsPrecision          <-        {#get QueryInfo -> typeInfo.fsPrecision          #} p
+      objectType           <-        {#get QueryInfo -> typeInfo.objectType           #} p
+      return Data_DataTypeInfo {..}
     nullOk     <- toBool  <$> {#get QueryInfo -> nullOk     #} p
+    name       <- ts name' nameLength
     return Data_QueryInfo {..}
 
 data Data_ShardingKeyColumn  = Data_ShardingKeyColumn
   { oracleTypeNum :: OracleTypeNum
   , nativeTypeNum :: NativeTypeNum
-  -- , value         :: DataBuffer
+  , value         :: DataValue
   } deriving Show
 
 instance Storable Data_ShardingKeyColumn where
@@ -497,8 +738,46 @@ instance Storable Data_ShardingKeyColumn where
   peek      p = do
     oracleTypeNum <- te      <$> {#get ShardingKeyColumn -> oracleTypeNum #} p
     nativeTypeNum <- te      <$> {#get ShardingKeyColumn -> nativeTypeNum #} p
-    value         <- castPtr <$> {#get ShardingKeyColumn -> value         #} p
+    value         <- go p nativeTypeNum
     return Data_ShardingKeyColumn {..}
+    where
+      go p NativeTypeInt64      = DataInt64      <$> {#get ShardingKeyColumn -> value.asInt64      #} p
+      go p NativeTypeUint64     = DataUint64     <$> {#get ShardingKeyColumn -> value.asUint64     #} p
+      go p NativeTypeFloat      = DataFloat      <$> {#get ShardingKeyColumn -> value.asFloat      #} p
+      go p NativeTypeDouble     = DataDouble     <$> {#get ShardingKeyColumn -> value.asDouble     #} p
+      go p NativeTypeBytes      = DataBytes      <$> do
+        ptr      <- {#get ShardingKeyColumn -> value.asBytes.ptr      #} p
+        length   <- {#get ShardingKeyColumn -> value.asBytes.length   #} p
+        encoding <- {#get ShardingKeyColumn -> value.asBytes.encoding #} p >>= tb
+        bytes    <- ts ptr length
+        return Data_Bytes {..}
+      go p NativeTypeTimestamp  = DataTimestamp  <$> do
+        year           <- {#get ShardingKeyColumn -> value.asTimestamp.year           #} p
+        month          <- {#get ShardingKeyColumn -> value.asTimestamp.month          #} p
+        day            <- {#get ShardingKeyColumn -> value.asTimestamp.day            #} p
+        hour           <- {#get ShardingKeyColumn -> value.asTimestamp.hour           #} p
+        minute         <- {#get ShardingKeyColumn -> value.asTimestamp.minute         #} p
+        second         <- {#get ShardingKeyColumn -> value.asTimestamp.second         #} p
+        fsecond        <- {#get ShardingKeyColumn -> value.asTimestamp.fsecond        #} p
+        tzHourOffset   <- {#get ShardingKeyColumn -> value.asTimestamp.tzHourOffset   #} p
+        tzMinuteOffset <- {#get ShardingKeyColumn -> value.asTimestamp.tzMinuteOffset #} p
+        return Data_Timestamp {..}
+      go p NativeTypeIntervalDs = DataIntervalDs <$> do
+        days     <- {#get ShardingKeyColumn -> value.asIntervalDS.days     #} p
+        hours    <- {#get ShardingKeyColumn -> value.asIntervalDS.hours    #} p
+        minutes  <- {#get ShardingKeyColumn -> value.asIntervalDS.minutes  #} p
+        seconds  <- {#get ShardingKeyColumn -> value.asIntervalDS.seconds  #} p
+        fseconds <- {#get ShardingKeyColumn -> value.asIntervalDS.fseconds #} p
+        return Data_IntervalDS {..}
+      go p NativeTypeIntervalYm = DataIntervalYm <$> do
+        years    <- {#get ShardingKeyColumn -> value.asIntervalYM.years    #} p
+        months   <- {#get ShardingKeyColumn -> value.asIntervalYM.months   #} p
+        return Data_IntervalYM {..}
+      go p NativeTypeLob        = DataLob        <$> {#get ShardingKeyColumn -> value.asLOB        #} p
+      go p NativeTypeObject     = DataObject     <$> {#get ShardingKeyColumn -> value.asObject     #} p
+      go p NativeTypeStmt       = DataStmt       <$> {#get ShardingKeyColumn -> value.asStmt       #} p
+      go p NativeTypeRowid      = DataRowid      <$> {#get ShardingKeyColumn -> value.asRowid      #} p
+      go p NativeTypeBoolean    = (DataBoolean .toBool)<$> {#get ShardingKeyColumn -> value.asBoolean    #} p
 
 data Data_StmtInfo = Data_StmtInfo
   { isQuery       :: Bool
@@ -529,12 +808,10 @@ data Data_SubscrCreateParams = Data_SubscrCreateParams
   , operations          :: CInt
   , portNumber          :: CUInt
   , timeout             :: CUInt
-  , name                :: Ptr CChar
-  , nameLength          :: CUInt
+  , name                :: ByteString
   , callback            :: FunPtr (Ptr () -> PtrSubscrMessage -> IO ())
   , callbackContext     :: Ptr ()
-  , recipientName       :: Ptr CChar
-  , recipientNameLength :: CUInt
+  , recipientName       :: ByteString
   } deriving Show
 
 instance Storable Data_SubscrCreateParams where
@@ -548,18 +825,19 @@ instance Storable Data_SubscrCreateParams where
     operations          <- {#get SubscrCreateParams ->    operations          #} p
     portNumber          <- {#get SubscrCreateParams ->    portNumber          #} p
     timeout             <- {#get SubscrCreateParams ->    timeout             #} p
-    name                <- {#get SubscrCreateParams ->    name                #} p
+    name'               <- {#get SubscrCreateParams ->    name                #} p
     nameLength          <- {#get SubscrCreateParams ->    nameLength          #} p
     callback            <- {#get SubscrCreateParams ->    callback            #} p
     callbackContext     <- {#get SubscrCreateParams ->    callbackContext     #} p
-    recipientName       <- {#get SubscrCreateParams ->    recipientName       #} p
+    recipientName'      <- {#get SubscrCreateParams ->    recipientName       #} p
     recipientNameLength <- {#get SubscrCreateParams ->    recipientNameLength #} p
+    name                <- ts name'          nameLength
+    recipientName       <- ts recipientName' recipientNameLength
     return Data_SubscrCreateParams {..}
 
 data Data_SubscrMessage = Data_SubscrMessage
   { eventType    :: EventType
-  , dbName       :: Ptr CChar
-  , dbNameLength :: CUInt
+  , dbName       :: ByteString
   , tables       :: PtrSubscrMessageTable
   , numTables    :: CUInt
   , queries      :: PtrSubscrMessageQuery
@@ -575,7 +853,7 @@ instance Storable Data_SubscrMessage where
   poke      _ = noImplement
   peek      p = do
     eventType    <- te <$> {#get SubscrMessage -> eventType    #} p
-    dbName       <- {#get SubscrMessage -> dbName       #} p
+    dbName'      <- {#get SubscrMessage -> dbName       #} p
     dbNameLength <- {#get SubscrMessage -> dbNameLength #} p
     tables       <- {#get SubscrMessage -> tables       #} p
     numTables    <- {#get SubscrMessage -> numTables    #} p
@@ -584,10 +862,11 @@ instance Storable Data_SubscrMessage where
     errorInfo    <- {#get SubscrMessage -> errorInfo    #} p
     txId         <- {#get SubscrMessage -> txId         #} p
     txIdLength   <- {#get SubscrMessage -> txIdLength   #} p
+    dbName       <- ts dbName' dbNameLength
     return Data_SubscrMessage {..}
 
 data Data_SubscrMessageQuery = Data_SubscrMessageQuery
-  { id        :: CULLong
+  { mid       :: CULLong
   , operation :: OpCode
   , tables    :: PtrSubscrMessageTable
   , numTables :: CUInt
@@ -598,7 +877,7 @@ instance Storable Data_SubscrMessageQuery where
   alignment _ = {#alignof SubscrMessageQuery #}
   poke      _ = noImplement
   peek      p = do
-    id        <- {#get SubscrMessageQuery -> id        #} p
+    mid       <- {#get SubscrMessageQuery -> id        #} p
     operation <- te <$> {#get SubscrMessageQuery -> operation #} p
     tables    <- {#get SubscrMessageQuery -> tables    #} p
     numTables <- {#get SubscrMessageQuery -> numTables #} p
@@ -606,8 +885,7 @@ instance Storable Data_SubscrMessageQuery where
 
 data Data_SubscrMessageRow = Data_SubscrMessageRow
   { operation   :: OpCode
-  , rowid       :: Ptr CChar
-  , rowidLength :: CUInt
+  , rowid       :: ByteString
   } deriving Show
 
 instance Storable Data_SubscrMessageRow where
@@ -616,14 +894,14 @@ instance Storable Data_SubscrMessageRow where
   poke      _ = noImplement
   peek      p = do
     operation   <- te <$> {#get SubscrMessageRow -> operation  #} p
-    rowid       <- {#get SubscrMessageRow -> rowid       #} p
+    rowid'      <- {#get SubscrMessageRow -> rowid       #} p
     rowidLength <- {#get SubscrMessageRow -> rowidLength #} p
+    rowid       <- ts rowid' rowidLength
     return Data_SubscrMessageRow {..}
 
 data Data_SubscrMessageTable = Data_SubscrMessageTable
   { operation  :: OpCode
-  , name       :: Ptr CChar
-  , nameLength :: CUInt
+  , name       :: ByteString
   , rows       :: PtrSubscrMessageRow
   , numRows    :: CUInt
   } deriving Show
@@ -634,10 +912,11 @@ instance Storable Data_SubscrMessageTable where
   poke      _ = noImplement
   peek      p = do
     operation  <- te <$> {#get SubscrMessageTable -> operation  #} p
-    name       <- {#get SubscrMessageTable -> name       #} p
+    name'      <- {#get SubscrMessageTable -> name       #} p
     nameLength <- {#get SubscrMessageTable -> nameLength #} p
     rows       <- {#get SubscrMessageTable -> rows       #} p
     numRows    <- {#get SubscrMessageTable -> numRows    #} p
+    name       <- ts name' nameLength
     return Data_SubscrMessageTable {..}
 
 data Data_VersionInfo = Data_VersionInfo
@@ -663,257 +942,257 @@ instance Storable Data_VersionInfo where
     return Data_VersionInfo {..}
 
 -- Context 
-contextCreate                 = {#call Context_create                 #}
-contextDestroy                = {#call Context_destroy                #}
-contextGetClientVersion       = {#call Context_getClientVersion       #}
-contextInitCommonCreateParams = {#call Context_initCommonCreateParams #}
-contextInitConnCreateParams   = {#call Context_initConnCreateParams   #}
-contextInitPoolCreateParams   = {#call Context_initPoolCreateParams   #}
-contextInitSubscrCreateParams = {#call Context_initSubscrCreateParams #}
-contextGetError               = {#call Context_getError               #}
+libContextCreate                 = {#call Context_create                 #}
+libContextDestroy                = {#call Context_destroy                #}
+libContextGetClientVersion       = {#call Context_getClientVersion       #}
+libContextInitCommonCreateParams = {#call Context_initCommonCreateParams #}
+libContextInitConnCreateParams   = {#call Context_initConnCreateParams   #}
+libContextInitPoolCreateParams   = {#call Context_initPoolCreateParams   #}
+libContextInitSubscrCreateParams = {#call Context_initSubscrCreateParams #}
+libContextGetError               = {#call Context_getError               #}
 
 -- Conn
 
-connAddRef              = {#call Conn_addRef              #}
-connBeginDistribTrans   = {#call Conn_beginDistribTrans   #}
-connBreakExecution      = {#call Conn_breakExecution      #}
-connChangePassword      = {#call Conn_changePassword      #}
-connClose               = {#call Conn_close               #}
-connCommit              = {#call Conn_commit              #}
-connCreate              = {#call Conn_create              #}
-connDeqObject           = {#call Conn_deqObject           #}
-connEnqObject           = {#call Conn_enqObject           #}
-connGetCurrentSchema    = {#call Conn_getCurrentSchema    #}
-connGetEdition          = {#call Conn_getEdition          #}
-connGetEncodingInfo     = {#call Conn_getEncodingInfo     #}
-connGetExternalName     = {#call Conn_getExternalName     #}
-connGetHandle           = {#call Conn_getHandle           #}
-connGetInternalName     = {#call Conn_getInternalName     #}
-connGetLTXID            = {#call Conn_getLTXID            #}
-connGetObjectType       = {#call Conn_getObjectType       #}
-connGetServerVersion    = {#call Conn_getServerVersion    #}
-connGetStmtCacheSize    = {#call Conn_getStmtCacheSize    #}
-connNewDeqOptions       = {#call Conn_newDeqOptions       #}
-connNewEnqOptions       = {#call Conn_newEnqOptions       #}
-connNewMsgProps         = {#call Conn_newMsgProps         #}
-connNewSubscription     = {#call Conn_newSubscription     #}
-connNewTempLob          = {#call Conn_newTempLob          #}
-connNewVar              = {#call Conn_newVar              #}
-connPing                = {#call Conn_ping                #}
-connPrepareDistribTrans = {#call Conn_prepareDistribTrans #}
-connPrepareStmt         = {#call Conn_prepareStmt         #}
-connRelease             = {#call Conn_release             #}
-connRollback            = {#call Conn_rollback            #}
-connSetAction           = {#call Conn_setAction           #}
-connSetClientIdentifier = {#call Conn_setClientIdentifier #}
-connSetClientInfo       = {#call Conn_setClientInfo       #}
-connSetCurrentSchema    = {#call Conn_setCurrentSchema    #}
-connSetDbOp             = {#call Conn_setDbOp             #}
-connSetExternalName     = {#call Conn_setExternalName     #}
-connSetInternalName     = {#call Conn_setInternalName     #}
-connSetModule           = {#call Conn_setModule           #}
-connSetStmtCacheSize    = {#call Conn_setStmtCacheSize    #}
-connShutdownDatabase    = {#call Conn_shutdownDatabase    #}
-connStartupDatabase     = {#call Conn_startupDatabase     #}
+libConnAddRef              = {#call Conn_addRef              #}
+libConnBeginDistribTrans   = {#call Conn_beginDistribTrans   #}
+libConnBreakExecution      = {#call Conn_breakExecution      #}
+libConnChangePassword      = {#call Conn_changePassword      #}
+libConnClose               = {#call Conn_close               #}
+libConnCommit              = {#call Conn_commit              #}
+libConnCreate              = {#call Conn_create              #}
+libConnDeqObject           = {#call Conn_deqObject           #}
+libConnEnqObject           = {#call Conn_enqObject           #}
+libConnGetCurrentSchema    = {#call Conn_getCurrentSchema    #}
+libConnGetEdition          = {#call Conn_getEdition          #}
+libConnGetEncodingInfo     = {#call Conn_getEncodingInfo     #}
+libConnGetExternalName     = {#call Conn_getExternalName     #}
+libConnGetHandle           = {#call Conn_getHandle           #}
+libConnGetInternalName     = {#call Conn_getInternalName     #}
+libConnGetLTXID            = {#call Conn_getLTXID            #}
+libConnGetObjectType       = {#call Conn_getObjectType       #}
+libConnGetServerVersion    = {#call Conn_getServerVersion    #}
+libConnGetStmtCacheSize    = {#call Conn_getStmtCacheSize    #}
+libConnNewDeqOptions       = {#call Conn_newDeqOptions       #}
+libConnNewEnqOptions       = {#call Conn_newEnqOptions       #}
+libConnNewMsgProps         = {#call Conn_newMsgProps         #}
+libConnNewSubscription     = {#call Conn_newSubscription     #}
+libConnNewTempLob          = {#call Conn_newTempLob          #}
+libConnNewVar              = {#call Conn_newVar              #}
+libConnPing                = {#call Conn_ping                #}
+libConnPrepareDistribTrans = {#call Conn_prepareDistribTrans #}
+libConnPrepareStmt         = {#call Conn_prepareStmt         #}
+libConnRelease             = {#call Conn_release             #}
+libConnRollback            = {#call Conn_rollback            #}
+libConnSetAction           = {#call Conn_setAction           #}
+libConnSetClientIdentifier = {#call Conn_setClientIdentifier #}
+libConnSetClientInfo       = {#call Conn_setClientInfo       #}
+libConnSetCurrentSchema    = {#call Conn_setCurrentSchema    #}
+libConnSetDbOp             = {#call Conn_setDbOp             #}
+libConnSetExternalName     = {#call Conn_setExternalName     #}
+libConnSetInternalName     = {#call Conn_setInternalName     #}
+libConnSetModule           = {#call Conn_setModule           #}
+libConnSetStmtCacheSize    = {#call Conn_setStmtCacheSize    #}
+libConnShutdownDatabase    = {#call Conn_shutdownDatabase    #}
+libConnStartupDatabase     = {#call Conn_startupDatabase     #}
 
 -- Data 
-dataGetDouble     = {#call Data_getDouble     #}
-dataGetBytes      = {#call Data_getBytes      #}
-dataGetIntervalDS = {#call Data_getIntervalDS #}
-dataGetIntervalYM = {#call Data_getIntervalYM #}
-dataGetLOB        = {#call Data_getLOB        #}
-dataGetObject     = {#call Data_getObject     #}
-dataGetStmt       = {#call Data_getStmt       #}
-dataGetTimestamp  = {#call Data_getTimestamp  #}
-dataGetFloat      = {#call Data_getFloat      #}
-dataGetBool       = {#call Data_getBool       #}
-dataGetInt64      = {#call Data_getInt64      #}
-dataGetUint64     = {#call Data_getUint64     #}
-dataSetBool       = {#call Data_setBool       #}
-dataSetBytes      = {#call Data_setBytes      #}
-dataSetDouble     = {#call Data_setDouble     #}
-dataSetFloat      = {#call Data_setFloat      #}
-dataSetInt64      = {#call Data_setInt64      #}
-dataSetIntervalDS = {#call Data_setIntervalDS #}
-dataSetIntervalYM = {#call Data_setIntervalYM #}
-dataSetLOB        = {#call Data_setLOB        #}
-dataSetObject     = {#call Data_setObject     #}
-dataSetStmt       = {#call Data_setStmt       #}
-dataSetTimestamp  = {#call Data_setTimestamp  #}
-dataSetUint64     = {#call Data_setUint64     #}
+libDataGetDouble     = {#call Data_getDouble     #}
+libDataGetBytes      = {#call Data_getBytes      #}
+libDataGetIntervalDS = {#call Data_getIntervalDS #}
+libDataGetIntervalYM = {#call Data_getIntervalYM #}
+libDataGetLOB        = {#call Data_getLOB        #}
+libDataGetObject     = {#call Data_getObject     #}
+libDataGetStmt       = {#call Data_getStmt       #}
+libDataGetTimestamp  = {#call Data_getTimestamp  #}
+libDataGetFloat      = {#call Data_getFloat      #}
+libDataGetBool       = {#call Data_getBool       #}
+libDataGetInt64      = {#call Data_getInt64      #}
+libDataGetUint64     = {#call Data_getUint64     #}
+libDataSetBool       = {#call Data_setBool       #}
+libDataSetBytes      = {#call Data_setBytes      #}
+libDataSetDouble     = {#call Data_setDouble     #}
+libDataSetFloat      = {#call Data_setFloat      #}
+libDataSetInt64      = {#call Data_setInt64      #}
+libDataSetIntervalDS = {#call Data_setIntervalDS #}
+libDataSetIntervalYM = {#call Data_setIntervalYM #}
+libDataSetLOB        = {#call Data_setLOB        #}
+libDataSetObject     = {#call Data_setObject     #}
+libDataSetStmt       = {#call Data_setStmt       #}
+libDataSetTimestamp  = {#call Data_setTimestamp  #}
+libDataSetUint64     = {#call Data_setUint64     #}
 
 
 -- DeqOptions
-deqOptionsAddRef            = {#call DeqOptions_addRef            #}
-deqOptionsGetCondition      = {#call DeqOptions_getCondition      #}
-deqOptionsGetConsumerName   = {#call DeqOptions_getConsumerName   #}
-deqOptionsGetCorrelation    = {#call DeqOptions_getCorrelation    #}
-deqOptionsGetMode           = {#call DeqOptions_getMode           #}
-deqOptionsGetMsgId          = {#call DeqOptions_getMsgId          #}
-deqOptionsGetNavigation     = {#call DeqOptions_getNavigation     #}
-deqOptionsGetTransformation = {#call DeqOptions_getTransformation #}
-deqOptionsGetVisibility     = {#call DeqOptions_getVisibility     #}
-deqOptionsGetWait           = {#call DeqOptions_getWait           #}
-deqOptionsRelease           = {#call DeqOptions_release           #}
-deqOptionsSetCondition      = {#call DeqOptions_setCondition      #}
-deqOptionsSetConsumerName   = {#call DeqOptions_setConsumerName   #}
-deqOptionsSetCorrelation    = {#call DeqOptions_setCorrelation    #}
-deqOptionsSetDeliveryMode   = {#call DeqOptions_setDeliveryMode   #}
-deqOptionsSetMode           = {#call DeqOptions_setMode           #}
-deqOptionsSetMsgId          = {#call DeqOptions_setMsgId          #}
-deqOptionsSetNavigation     = {#call DeqOptions_setNavigation     #}
-deqOptionsSetTransformation = {#call DeqOptions_setTransformation #}
-deqOptionsSetVisibility     = {#call DeqOptions_setVisibility     #}
-deqOptionsSetWait           = {#call DeqOptions_setWait           #}
+libDeqOptionsAddRef            = {#call DeqOptions_addRef            #}
+libDeqOptionsGetCondition      = {#call DeqOptions_getCondition      #}
+libDeqOptionsGetConsumerName   = {#call DeqOptions_getConsumerName   #}
+libDeqOptionsGetCorrelation    = {#call DeqOptions_getCorrelation    #}
+libDeqOptionsGetMode           = {#call DeqOptions_getMode           #}
+libDeqOptionsGetMsgId          = {#call DeqOptions_getMsgId          #}
+libDeqOptionsGetNavigation     = {#call DeqOptions_getNavigation     #}
+libDeqOptionsGetTransformation = {#call DeqOptions_getTransformation #}
+libDeqOptionsGetVisibility     = {#call DeqOptions_getVisibility     #}
+libDeqOptionsGetWait           = {#call DeqOptions_getWait           #}
+libDeqOptionsRelease           = {#call DeqOptions_release           #}
+libDeqOptionsSetCondition      = {#call DeqOptions_setCondition      #}
+libDeqOptionsSetConsumerName   = {#call DeqOptions_setConsumerName   #}
+libDeqOptionsSetCorrelation    = {#call DeqOptions_setCorrelation    #}
+libDeqOptionsSetDeliveryMode   = {#call DeqOptions_setDeliveryMode   #}
+libDeqOptionsSetMode           = {#call DeqOptions_setMode           #}
+libDeqOptionsSetMsgId          = {#call DeqOptions_setMsgId          #}
+libDeqOptionsSetNavigation     = {#call DeqOptions_setNavigation     #}
+libDeqOptionsSetTransformation = {#call DeqOptions_setTransformation #}
+libDeqOptionsSetVisibility     = {#call DeqOptions_setVisibility     #}
+libDeqOptionsSetWait           = {#call DeqOptions_setWait           #}
 
 -- EnqOptions
-enqOptionsAddRef            = {#call EnqOptions_addRef            #}
-enqOptionsGetTransformation = {#call EnqOptions_getTransformation #}
-enqOptionsGetVisibility     = {#call EnqOptions_getVisibility     #}
-enqOptionsRelease           = {#call EnqOptions_release           #}
-enqOptionsSetDeliveryMode   = {#call EnqOptions_setDeliveryMode   #}
-enqOptionsSetTransformation = {#call EnqOptions_setTransformation #}
-enqOptionsSetVisibility     = {#call EnqOptions_setVisibility     #}
+libEnqOptionsAddRef            = {#call EnqOptions_addRef            #}
+libEnqOptionsGetTransformation = {#call EnqOptions_getTransformation #}
+libEnqOptionsGetVisibility     = {#call EnqOptions_getVisibility     #}
+libEnqOptionsRelease           = {#call EnqOptions_release           #}
+libEnqOptionsSetDeliveryMode   = {#call EnqOptions_setDeliveryMode   #}
+libEnqOptionsSetTransformation = {#call EnqOptions_setTransformation #}
+libEnqOptionsSetVisibility     = {#call EnqOptions_setVisibility     #}
 
 -- Lob
-lobAddRef                  = {#call Lob_addRef                  #}
-lobClose                   = {#call Lob_close                   #}
-lobCloseResource           = {#call Lob_closeResource           #}
-lobCopy                    = {#call Lob_copy                    #}
-lobFlushBuffer             = {#call Lob_flushBuffer             #}
-lobGetBufferSize           = {#call Lob_getBufferSize           #}
-lobGetChunkSize            = {#call Lob_getChunkSize            #}
-lobGetDirectoryAndFileName = {#call Lob_getDirectoryAndFileName #}
-lobGetFileExists           = {#call Lob_getFileExists           #}
-lobGetIsResourceOpen       = {#call Lob_getIsResourceOpen       #}
-lobGetSize                 = {#call Lob_getSize                 #}
-lobOpenResource            = {#call Lob_openResource            #}
-lobReadBytes               = {#call Lob_readBytes               #}
-lobRelease                 = {#call Lob_release                 #}
-lobSetDirectoryAndFileName = {#call Lob_setDirectoryAndFileName #}
-lobSetFromBytes            = {#call Lob_setFromBytes            #}
-lobTrim                    = {#call Lob_trim                    #}
-lobWriteBytes              = {#call Lob_writeBytes              #}
+libLobAddRef                  = {#call Lob_addRef                  #}
+libLobClose                   = {#call Lob_close                   #}
+libLobCloseResource           = {#call Lob_closeResource           #}
+libLobCopy                    = {#call Lob_copy                    #}
+libLobFlushBuffer             = {#call Lob_flushBuffer             #}
+libLobGetBufferSize           = {#call Lob_getBufferSize           #}
+libLobGetChunkSize            = {#call Lob_getChunkSize            #}
+libLobGetDirectoryAndFileName = {#call Lob_getDirectoryAndFileName #}
+libLobGetFileExists           = {#call Lob_getFileExists           #}
+libLobGetIsResourceOpen       = {#call Lob_getIsResourceOpen       #}
+libLobGetSize                 = {#call Lob_getSize                 #}
+libLobOpenResource            = {#call Lob_openResource            #}
+libLobReadBytes               = {#call Lob_readBytes               #}
+libLobRelease                 = {#call Lob_release                 #}
+libLobSetDirectoryAndFileName = {#call Lob_setDirectoryAndFileName #}
+libLobSetFromBytes            = {#call Lob_setFromBytes            #}
+libLobTrim                    = {#call Lob_trim                    #}
+libLobWriteBytes              = {#call Lob_writeBytes              #}
 
 -- MsgProps
-msgPropsAddRef           = {#call MsgProps_addRef           #}
-msgPropsGetCorrelation   = {#call MsgProps_getCorrelation   #}
-msgPropsGetDelay         = {#call MsgProps_getDelay         #}
-msgPropsGetDeliveryMode  = {#call MsgProps_getDeliveryMode  #}
-msgPropsGetEnqTime       = {#call MsgProps_getEnqTime       #}
-msgPropsGetExceptionQ    = {#call MsgProps_getExceptionQ    #}
-msgPropsGetExpiration    = {#call MsgProps_getExpiration    #}
-msgPropsGetNumAttempts   = {#call MsgProps_getNumAttempts   #}
-msgPropsGetOriginalMsgId = {#call MsgProps_getOriginalMsgId #}
-msgPropsGetPriority      = {#call MsgProps_getPriority      #}
-msgPropsGetState         = {#call MsgProps_getState         #}
-msgPropsRelease          = {#call MsgProps_release          #}
-msgPropsSetCorrelation   = {#call MsgProps_setCorrelation   #}
-msgPropsSetDelay         = {#call MsgProps_setDelay         #}
-msgPropsSetExceptionQ    = {#call MsgProps_setExceptionQ    #}
-msgPropsSetExpiration    = {#call MsgProps_setExpiration    #}
-msgPropsSetOriginalMsgId = {#call MsgProps_setOriginalMsgId #}
-msgPropsSetPriority      = {#call MsgProps_setPriority      #}
+libMsgPropsAddRef           = {#call MsgProps_addRef           #}
+libMsgPropsGetCorrelation   = {#call MsgProps_getCorrelation   #}
+libMsgPropsGetDelay         = {#call MsgProps_getDelay         #}
+libMsgPropsGetDeliveryMode  = {#call MsgProps_getDeliveryMode  #}
+libMsgPropsGetEnqTime       = {#call MsgProps_getEnqTime       #}
+libMsgPropsGetExceptionQ    = {#call MsgProps_getExceptionQ    #}
+libMsgPropsGetExpiration    = {#call MsgProps_getExpiration    #}
+libMsgPropsGetNumAttempts   = {#call MsgProps_getNumAttempts   #}
+libMsgPropsGetOriginalMsgId = {#call MsgProps_getOriginalMsgId #}
+libMsgPropsGetPriority      = {#call MsgProps_getPriority      #}
+libMsgPropsGetState         = {#call MsgProps_getState         #}
+libMsgPropsRelease          = {#call MsgProps_release          #}
+libMsgPropsSetCorrelation   = {#call MsgProps_setCorrelation   #}
+libMsgPropsSetDelay         = {#call MsgProps_setDelay         #}
+libMsgPropsSetExceptionQ    = {#call MsgProps_setExceptionQ    #}
+libMsgPropsSetExpiration    = {#call MsgProps_setExpiration    #}
+libMsgPropsSetOriginalMsgId = {#call MsgProps_setOriginalMsgId #}
+libMsgPropsSetPriority      = {#call MsgProps_setPriority      #}
 
 -- Object
-objectAddRef                  = {#call Object_addRef                  #}
-objectAppendElement           = {#call Object_appendElement           #}
-objectCopy                    = {#call Object_copy                    #}
-objectDeleteElementByIndex    = {#call Object_deleteElementByIndex    #}
-objectGetAttributeValue       = {#call Object_getAttributeValue       #}
-objectGetElementExistsByIndex = {#call Object_getElementExistsByIndex #}
-objectGetElementValueByIndex  = {#call Object_getElementValueByIndex  #}
-objectGetFirstIndex           = {#call Object_getFirstIndex           #}
-objectGetLastIndex            = {#call Object_getLastIndex            #}
-objectGetNextIndex            = {#call Object_getNextIndex            #}
-objectGetPrevIndex            = {#call Object_getPrevIndex            #}
-objectGetSize                 = {#call Object_getSize                 #}
-objectRelease                 = {#call Object_release                 #}
-objectSetAttributeValue       = {#call Object_setAttributeValue       #}
-objectSetElementValueByIndex  = {#call Object_setElementValueByIndex  #}
-objectTrim                    = {#call Object_trim                    #}
+libObjectAddRef                  = {#call Object_addRef                  #}
+libObjectAppendElement           = {#call Object_appendElement           #}
+libObjectCopy                    = {#call Object_copy                    #}
+libObjectDeleteElementByIndex    = {#call Object_deleteElementByIndex    #}
+libObjectGetAttributeValue       = {#call Object_getAttributeValue       #}
+libObjectGetElementExistsByIndex = {#call Object_getElementExistsByIndex #}
+libObjectGetElementValueByIndex  = {#call Object_getElementValueByIndex  #}
+libObjectGetFirstIndex           = {#call Object_getFirstIndex           #}
+libObjectGetLastIndex            = {#call Object_getLastIndex            #}
+libObjectGetNextIndex            = {#call Object_getNextIndex            #}
+libObjectGetPrevIndex            = {#call Object_getPrevIndex            #}
+libObjectGetSize                 = {#call Object_getSize                 #}
+libObjectRelease                 = {#call Object_release                 #}
+libObjectSetAttributeValue       = {#call Object_setAttributeValue       #}
+libObjectSetElementValueByIndex  = {#call Object_setElementValueByIndex  #}
+libObjectTrim                    = {#call Object_trim                    #}
 
 -- ObjectAttr
-objectAttrAddRef  = {#call ObjectAttr_addRef  #}
-objectAttrGetInfo = {#call ObjectAttr_getInfo #}
-objectAttrRelease = {#call ObjectAttr_release #}
+libObjectAttrAddRef  = {#call ObjectAttr_addRef  #}
+libObjectAttrGetInfo = {#call ObjectAttr_getInfo #}
+libObjectAttrRelease = {#call ObjectAttr_release #}
 
 -- ObjectType
-objectTypeAddRef        = {#call ObjectType_addRef        #}
-objectTypeCreateObject  = {#call ObjectType_createObject  #}
-objectTypeGetAttributes = {#call ObjectType_getAttributes #}
-objectTypeGetInfo       = {#call ObjectType_getInfo       #}
-objectTypeRelease       = {#call ObjectType_release       #}
+libObjectTypeAddRef        = {#call ObjectType_addRef        #}
+libObjectTypeCreateObject  = {#call ObjectType_createObject  #}
+libObjectTypeGetAttributes = {#call ObjectType_getAttributes #}
+libObjectTypeGetInfo       = {#call ObjectType_getInfo       #}
+libObjectTypeRelease       = {#call ObjectType_release       #}
 
 -- Pool
-poolAcquireConnection     = {#call Pool_acquireConnection     #}
-poolAddRef                = {#call Pool_addRef                #}
-poolClose                 = {#call Pool_close                 #}
-poolCreate                = {#call Pool_create                #}
-poolGetBusyCount          = {#call Pool_getBusyCount          #}
-poolGetEncodingInfo       = {#call Pool_getEncodingInfo       #}
-poolGetGetMode            = {#call Pool_getGetMode            #}
-poolGetMaxLifetimeSession = {#call Pool_getMaxLifetimeSession #}
-poolGetOpenCount          = {#call Pool_getOpenCount          #}
-poolGetStmtCacheSize      = {#call Pool_getStmtCacheSize      #}
-poolGetTimeout            = {#call Pool_getTimeout            #}
-poolRelease               = {#call Pool_release               #}
-poolSetGetMode            = {#call Pool_setGetMode            #}
-poolSetMaxLifetimeSession = {#call Pool_setMaxLifetimeSession #}
-poolSetStmtCacheSize      = {#call Pool_setStmtCacheSize      #}
-poolSetTimeout            = {#call Pool_setTimeout            #}
+libPoolAcquireConnection     = {#call Pool_acquireConnection     #}
+libPoolAddRef                = {#call Pool_addRef                #}
+libPoolClose                 = {#call Pool_close                 #}
+libPoolCreate                = {#call Pool_create                #}
+libPoolGetBusyCount          = {#call Pool_getBusyCount          #}
+libPoolGetEncodingInfo       = {#call Pool_getEncodingInfo       #}
+libPoolGetGetMode            = {#call Pool_getGetMode            #}
+libPoolGetMaxLifetimeSession = {#call Pool_getMaxLifetimeSession #}
+libPoolGetOpenCount          = {#call Pool_getOpenCount          #}
+libPoolGetStmtCacheSize      = {#call Pool_getStmtCacheSize      #}
+libPoolGetTimeout            = {#call Pool_getTimeout            #}
+libPoolRelease               = {#call Pool_release               #}
+libPoolSetGetMode            = {#call Pool_setGetMode            #}
+libPoolSetMaxLifetimeSession = {#call Pool_setMaxLifetimeSession #}
+libPoolSetStmtCacheSize      = {#call Pool_setStmtCacheSize      #}
+libPoolSetTimeout            = {#call Pool_setTimeout            #}
 
 -- Stmt
-stmtAddRef             = {#call Stmt_addRef             #}
-stmtBindByName         = {#call Stmt_bindByName         #}
-stmtBindByPos          = {#call Stmt_bindByPos          #}
-stmtBindValueByName    = {#call Stmt_bindValueByName    #}
-stmtBindValueByPos     = {#call Stmt_bindValueByPos     #}
-stmtClose              = {#call Stmt_close              #}
-stmtDefine             = {#call Stmt_define             #}
-stmtDefineValue        = {#call Stmt_defineValue        #}
-stmtExecute            = {#call Stmt_execute            #}
-stmtExecuteMany        = {#call Stmt_executeMany        #}
-stmtFetch              = {#call Stmt_fetch              #}
-stmtFetchRows          = {#call Stmt_fetchRows          #}
-stmtGetBatchErrorCount = {#call Stmt_getBatchErrorCount #}
-stmtGetBatchErrors     = {#call Stmt_getBatchErrors     #}
-stmtGetBindCount       = {#call Stmt_getBindCount       #}
-stmtGetBindNames       = {#call Stmt_getBindNames       #}
-stmtGetFetchArraySize  = {#call Stmt_getFetchArraySize  #}
-stmtGetImplicitResult  = {#call Stmt_getImplicitResult  #}
-stmtGetInfo            = {#call Stmt_getInfo            #}
-stmtGetNumQueryColumns = {#call Stmt_getNumQueryColumns #}
-stmtGetQueryInfo       = {#call Stmt_getQueryInfo       #}
-stmtGetQueryValue      = {#call Stmt_getQueryValue      #}
-stmtGetRowCount        = {#call Stmt_getRowCount        #}
-stmtGetRowCounts       = {#call Stmt_getRowCounts       #}
-stmtGetSubscrQueryId   = {#call Stmt_getSubscrQueryId   #}
-stmtRelease            = {#call Stmt_release            #}
-stmtScroll             = {#call Stmt_scroll             #}
-stmtSetFetchArraySize  = {#call Stmt_setFetchArraySize  #}
+libStmtAddRef             = {#call Stmt_addRef             #}
+libStmtBindByName         = {#call Stmt_bindByName         #}
+libStmtBindByPos          = {#call Stmt_bindByPos          #}
+libStmtBindValueByName    = {#call Stmt_bindValueByName    #}
+libStmtBindValueByPos     = {#call Stmt_bindValueByPos     #}
+libStmtClose              = {#call Stmt_close              #}
+libStmtDefine             = {#call Stmt_define             #}
+libStmtDefineValue        = {#call Stmt_defineValue        #}
+libStmtExecute            = {#call Stmt_execute            #}
+libStmtExecuteMany        = {#call Stmt_executeMany        #}
+libStmtFetch              = {#call Stmt_fetch              #}
+libStmtFetchRows          = {#call Stmt_fetchRows          #}
+libStmtGetBatchErrorCount = {#call Stmt_getBatchErrorCount #}
+libStmtGetBatchErrors     = {#call Stmt_getBatchErrors     #}
+libStmtGetBindCount       = {#call Stmt_getBindCount       #}
+libStmtGetBindNames       = {#call Stmt_getBindNames       #}
+libStmtGetFetchArraySize  = {#call Stmt_getFetchArraySize  #}
+libStmtGetImplicitResult  = {#call Stmt_getImplicitResult  #}
+libStmtGetInfo            = {#call Stmt_getInfo            #}
+libStmtGetNumQueryColumns = {#call Stmt_getNumQueryColumns #}
+libStmtGetQueryInfo       = {#call Stmt_getQueryInfo       #}
+libStmtGetQueryValue      = {#call Stmt_getQueryValue      #}
+libStmtGetRowCount        = {#call Stmt_getRowCount        #}
+libStmtGetRowCounts       = {#call Stmt_getRowCounts       #}
+libStmtGetSubscrQueryId   = {#call Stmt_getSubscrQueryId   #}
+libStmtRelease            = {#call Stmt_release            #}
+libStmtScroll             = {#call Stmt_scroll             #}
+libStmtSetFetchArraySize  = {#call Stmt_setFetchArraySize  #}
 
 -- RowId
-rowidAddRef         = {#call Rowid_addRef         #}
-rowidGetStringValue = {#call Rowid_getStringValue #}
-rowidRelease        = {#call Rowid_release        #}
+libRowidAddRef         = {#call Rowid_addRef         #}
+libRowidGetStringValue = {#call Rowid_getStringValue #}
+libRowidRelease        = {#call Rowid_release        #}
 
 -- Subscr
-subscrAddRef      = {#call Subscr_addRef      #}
-subscrClose       = {#call Subscr_close       #}
-subscrPrepareStmt = {#call Subscr_prepareStmt #}
-subscrRelease     = {#call Subscr_release     #}
+libSubscrAddRef      = {#call Subscr_addRef      #}
+libSubscrClose       = {#call Subscr_close       #}
+libSubscrPrepareStmt = {#call Subscr_prepareStmt #}
+libSubscrRelease     = {#call Subscr_release     #}
 
 -- Var
-varAddRef                = {#call Var_addRef                #}
-varCopyData              = {#call Var_copyData              #}
-varGetData               = {#call Var_getData               #}
-varGetNumElementsInArray = {#call Var_getNumElementsInArray #}
-varGetSizeInBytes        = {#call Var_getSizeInBytes        #}
-varRelease               = {#call Var_release               #}
-varSetFromBytes          = {#call Var_setFromBytes          #}
-varSetFromLob            = {#call Var_setFromLob            #}
-varSetFromObject         = {#call Var_setFromObject         #}
-varSetFromRowid          = {#call Var_setFromRowid          #}
-varSetFromStmt           = {#call Var_setFromStmt           #}
-varSetNumElementsInArray = {#call Var_setNumElementsInArray #}
+libVarAddRef                = {#call Var_addRef                #}
+libVarCopyData              = {#call Var_copyData              #}
+libVarGetData               = {#call Var_getData               #}
+libVarGetNumElementsInArray = {#call Var_getNumElementsInArray #}
+libVarGetSizeInBytes        = {#call Var_getSizeInBytes        #}
+libVarRelease               = {#call Var_release               #}
+libVarSetFromBytes          = {#call Var_setFromBytes          #}
+libVarSetFromLob            = {#call Var_setFromLob            #}
+libVarSetFromObject         = {#call Var_setFromObject         #}
+libVarSetFromRowid          = {#call Var_setFromRowid          #}
+libVarSetFromStmt           = {#call Var_setFromStmt           #}
+libVarSetNumElementsInArray = {#call Var_setNumElementsInArray #}
