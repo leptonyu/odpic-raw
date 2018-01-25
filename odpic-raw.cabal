@@ -1,9 +1,9 @@
 name:                odpic-raw
-version:             0.1.1
+version:             0.1.2
 -- synopsis:
 description:         A low-level client library for the Oracle database, implemented as
                      bindings to the C ODPI API.
-homepage:            https://github.com/leptonyu/odpi-hs#readme
+homepage:            https://github.com/leptonyu/odpic-raw#readme
 license:             BSD3
 license-file:        LICENSE
 author:              Daniel YU
@@ -28,4 +28,4 @@ library
 
 source-repository head
   type:     git
-  location: https://github.com/leptonyu/haskell-oracle
+  location: https://github.com/leptonyu/odpic-raw.git
