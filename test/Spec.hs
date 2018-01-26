@@ -6,9 +6,9 @@ import Test.QuickCheck
 import Database.Dpi
 
 -- define this 3 parameters before run test
-username = ""
-password = ""
-connstr  = ""
+username = "username"
+password = "password"
+connstr  = "localhost:1521/dbname"
 
 main :: IO ()
 main = hspec $ do
@@ -76,4 +76,25 @@ main = hspec $ do
           f <- fetch st
           f `shouldBe` Just 0
           mapM (getQueryValue st) [1..r] >>= print
+        withStatement conn False "SELECT 1,'hhh',SYSDATE FROM DUAL" $ \st -> do
+          r <- executeStatement st ModeExecDefault
+          r `shouldBe` 3
+          f <- fetch st
+          f `shouldBe` Just 0
+          mapM (getQueryValue st) [1..r] >>= print
 
+
+    it "Pool Test" $ withContext $ \cxt -> do
+      withPool cxt username password connstr "" "" $ \pool -> do
+        withPoolConnection pool $ \conn -> withStatement conn False "SELECT 1,'hhh',SYSDATE FROM DUAL" $ \st -> do
+          r <- executeStatement st ModeExecDefault
+          r `shouldBe` 3
+          f <- fetch st
+          f `shouldBe` Just 0
+          mapM (getQueryValue st) [1..r] >>= print
+        withPoolConnection pool $ \conn -> withStatement conn False "SELECT 1,'hhh',SYSDATE FROM DUAL" $ \st -> do
+          r <- executeStatement st ModeExecDefault
+          r `shouldBe` 3
+          f <- fetch st
+          f `shouldBe` Just 0
+          mapM (getQueryValue st) [1..r] >>= print

@@ -27,6 +27,9 @@ success = {#const DPI_SUCCESS #}
 isOk :: CInt -> Bool
 isOk = (== success)
 
+runOk :: (Ptr a -> IO CInt) -> Ptr a -> IO Bool
+runOk f p = isOk <$> f p
+
 peekInt :: (Num n, Integral a, Storable a) => Ptr a -> IO n
 peekInt p = fromIntegral <$> peek p
 
@@ -59,6 +62,8 @@ data DpiException
   = ErrorInfoException Data_ErrorInfo
   | VersionInfoNotFound
   | ConnectionCreateFailed Data_ErrorInfo
+  | PoolConnectionCreateFailed 
+  | PoolFetchFailed 
   | StatementCreateFailed
   | ConnectionPropNotFound ByteString
   | StatementExecuteFailed

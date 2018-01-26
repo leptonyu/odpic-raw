@@ -126,7 +126,7 @@ createContext
 
 -- | Destroys the context that was earlier created with the function 'createContext'.
 destroyContext :: PtrContext -> IO Bool
-destroyContext p = isOk <$> libContextDestroy p
+destroyContext = runOk libContextDestroy
 
 -- | With Context, 'PtrContext' will be destroyed after run
 withContext :: (PtrContext -> IO a) -> IO a
@@ -180,7 +180,7 @@ createConnection cxt username password connstr hcmp
       a <- peek pcmp
       poke pcmp $ hcmp a
       ok <- isOk <$> libConnCreate cxt u (fromIntegral ulen) p (fromIntegral plen) c (fromIntegral clen) pcmp pcop pc
-      if ok then peek pc else do throwContextError cxt
+      if ok then peek pc else throwContextError cxt
 
 -- | Closes the connection and makes it unusable for further activity. close connection, but not release resource, plese use 'releaseConnection' to release and close connection
 closeConnection :: ConnCloseMode -> PtrConn -> IO Bool
@@ -191,11 +191,11 @@ closeConnection mode p = isOk <$> libConnClose p (fe mode) nullPtr 0
 -- the connection is closed or released back to the session pool if that has not already taken place
 --  using the function 'closeConnection'.
 releaseConnection :: PtrConn -> IO Bool
-releaseConnection p = isOk <$> libConnRelease p
+releaseConnection = runOk libConnRelease
 
 -- | Pings the database to verify that the connection is still alive.
 pingConnection :: PtrConn -> IO Bool
-pingConnection p = isOk <$> libConnPing p
+pingConnection = runOk libConnPing
 
 -- | with connection
 withConnection
@@ -207,11 +207,10 @@ withConnection
   -> ByteString -- ^ NLS_NCHAR encoding
   -> (PtrConn -> IO a) -- ^ action use connection
   -> IO a
-withConnection p username password connstr lang nchar f
+withConnection p username password connstr lang nchar
   = bracket
       (createConnection p username password connstr (set lang nchar))
-      (closeConnection ModeConnCloseDefault)
-      f
+      (\c -> closeConnection ModeConnCloseDefault c `finally` releaseConnection c)
   where
     set l n v = v { encoding = l, nencoding = n} :: Data_CommonCreateParams
 
@@ -226,8 +225,8 @@ beginTransaction
   -> IO Bool
 beginTransaction p formatId transId branchId
   = useAsCStringLen transId  $ \(t,tlen) ->
-    useAsCStringLen branchId $ \(b,blen) -> do
-      isOk <$> libConnBeginDistribTrans p (fromIntegral formatId) t (fromIntegral tlen) b (fromIntegral blen)
+    useAsCStringLen branchId $ \(b,blen) -> isOk <$> 
+      libConnBeginDistribTrans p (fromIntegral formatId) t (fromIntegral tlen) b (fromIntegral blen)
 
 -- | Prepares a distributed transaction for commit. 
 -- This function should only be called after 'beginTransaction' is called and before 'commitConnection' is called.
@@ -239,11 +238,11 @@ prepareTransaction p
 
 -- | commit
 commitConnection :: PtrConn -> IO Bool
-commitConnection p = isOk <$> libConnCommit p
+commitConnection = runOk libConnCommit
 
 -- | rollback
 rollbackConnection :: PtrConn -> IO Bool
-rollbackConnection p = isOk <$> libConnRollback p
+rollbackConnection = runOk libConnRollback
 
 -- ** Information from Connection
 
@@ -284,6 +283,109 @@ getStmtCacheSize p
       ok <- isOk <$> libConnGetStmtCacheSize p pc
       if ok then fromIntegral <$> peek pc else throw $ ConnectionPropNotFound "stmtCacheSize"
 
+-- * ConnectionPool Interace
+-- $pool
+-- Pool handles are used to represent session pools. 
+-- They are created using the function 'createPool' and can be closed by calling the function 'closePool' 
+-- or releasing the last reference to the pool by calling the function 'releasePool'. 
+-- Pools can be used to create connections by calling the function 'acquiredConnection'.
+
+-- | Acquires a connection from the pool and returns a reference to it. This reference should be released as soon as it is no longer needed.
+acquiredConnection :: PtrPool -> IO PtrConn
+acquiredConnection
+  = _get' PoolConnectionCreateFailed (\p -> libPoolAcquireConnection p nullPtr 0 nullPtr 0 nullPtr) peek
+
+poolAddRef :: PtrPool -> IO Bool
+poolAddRef = runOk libPoolAddRef
+
+-- | Creates a session pool which creates and maintains a group of stateless sessions to the database.
+--  The main benefit of session pooling is performance since making a connection to the database is a time-consuming activity, 
+-- especially when the database is remote.
+createPool 
+  :: PtrContext -- ^ Context
+  -> ByteString -- ^ the name of the user used for authenticating the user
+  -> ByteString -- ^  the password to use for authenticating the user
+  -> ByteString -- ^ he connect string identifying the database to which a connection is to be established
+  -> (Data_CommonCreateParams -> Data_CommonCreateParams) -- ^ custom 'Data_CommonCreateParams'
+  -> IO PtrPool
+createPool cxt username password connstr hcmp
+  = alloca $ \pc   ->
+    alloca $ \pcmp ->
+    alloca $ \pcop ->
+    useAsCStringLen username $ \(u,ulen) ->
+    useAsCStringLen password $ \(p,plen) ->
+    useAsCStringLen connstr  $ \(c,clen) -> do
+      libContextInitCommonCreateParams cxt pcmp
+      libContextInitPoolCreateParams   cxt pcop
+      a <- peek pcmp
+      poke pcmp $ hcmp a
+      ok <- isOk <$> libPoolCreate cxt u (fromIntegral ulen) p (fromIntegral plen) c (fromIntegral clen) pcmp pcop pc
+      if ok then peek pc else throwContextError cxt
+
+-- | Closes the pool and makes it unusable for further activity.
+closePool :: PtrPool -> PoolCloseMode -> IO Bool
+closePool p mode = isOk <$> libPoolClose p (fe mode)
+
+-- | Releases a reference to the pool. A count of the references to the pool is maintained 
+-- and when this count reaches zero, the memory associated with the pool is freed 
+-- and the session pool is closed if that has not already taken place using the function 'closePool'.
+releasePool :: PtrPool -> IO Bool
+releasePool = runOk libPoolRelease 
+
+-- | with pool
+withPool
+  :: PtrContext -- ^ Context
+  -> ByteString -- ^ Username
+  -> ByteString -- ^ Password
+  -> ByteString -- ^ Connection String
+  -> ByteString -- ^ NLS_LANG encoding
+  -> ByteString -- ^ NLS_NCHAR encoding
+  -> (PtrPool -> IO a) -- ^ action use connection
+  -> IO a
+withPool p username password connstr lang nchar
+  = bracket
+      (createPool p username password connstr (set lang nchar))
+      (\c -> closePool c ModePoolCloseDefault `finally` releasePool c)
+  where
+    set l n v = v { encoding = l, nencoding = n} :: Data_CommonCreateParams
+
+withPoolConnection :: PtrPool -> (PtrConn -> IO a) -> IO a
+withPoolConnection p = bracket (acquiredConnection p) releaseConnection
+
+getPoolBusyCount :: PtrPool -> IO Int
+getPoolBusyCount = _get' PoolFetchFailed libPoolGetBusyCount peekInt
+
+getPoolEncodingInfo :: PtrPool -> IO Data_EncodingInfo
+getPoolEncodingInfo = _get' PoolFetchFailed libPoolGetEncodingInfo peek
+
+getPoolMode :: PtrPool -> IO PoolGetMode
+getPoolMode = _get' PoolFetchFailed libPoolGetGetMode (\p -> te <$> peek p)
+
+getPoolMaxLifetimeSession :: PtrPool -> IO Int
+getPoolMaxLifetimeSession = _get' PoolFetchFailed libPoolGetMaxLifetimeSession peekInt
+
+getPoolOpenCount :: PtrPool -> IO Int
+getPoolOpenCount = _get' PoolFetchFailed libPoolGetOpenCount peekInt
+
+getPoolStmtCacheSize :: PtrPool -> IO Int
+getPoolStmtCacheSize = _get' PoolFetchFailed libPoolGetStmtCacheSize peekInt
+
+getPoolTimeout :: PtrPool -> IO Int
+getPoolTimeout = _get' PoolFetchFailed libPoolGetTimeout peekInt
+
+setPoolGetMode :: PtrPool -> PoolGetMode -> IO Bool
+setPoolGetMode p mode = isOk <$> libPoolSetGetMode p (fe mode)
+
+setPoolMaxLifetimeSession :: PtrPool -> Int -> IO Bool
+setPoolMaxLifetimeSession p maxLifetimeSession = isOk <$> libPoolSetMaxLifetimeSession p (fromIntegral maxLifetimeSession)
+
+setPoolStmtCacheSize :: PtrPool -> Int -> IO Bool
+setPoolStmtCacheSize p stmtCacheSize = isOk <$> libPoolSetStmtCacheSize p (fromIntegral stmtCacheSize)
+
+setPoolTimeout :: PtrPool -> Int -> IO Bool
+setPoolTimeout p timeout = isOk <$> libPoolSetTimeout p (fromIntegral timeout)
+
+
 -- * Statement Interface
 -- $statement
 -- Statement handles are used to represent statements of all types (queries, DML, DDL and PL/SQL).
@@ -314,7 +416,7 @@ closeStatement p = isOk <$> libStmtClose p nullPtr 0
 -- and when this count reaches zero, the memory associated with the statement is freed 
 -- and the statement is closed if that has not already taken place using the function 'closeStatement'.
 releaseStatement :: PtrStmt -> IO Bool
-releaseStatement p = isOk <$> libStmtRelease p
+releaseStatement = runOk libStmtRelease
 
 withStatement 
   :: PtrConn    -- ^ Connection
@@ -322,11 +424,10 @@ withStatement
   -> ByteString -- ^ SQL String
   -> (PtrStmt -> IO a)
   -> IO a
-withStatement p scrollable sql f
+withStatement p scrollable sql
   = bracket 
       (createStatement p scrollable sql)
-      releaseStatement
-      f
+      (\c -> releaseStatement c `finally` closeStatement c)
 
 -- | Scrolls the statement to the position in the cursor specified by the mode and offset.
 scrollStatement :: PtrStmt -> FetchMode -> Int -> IO Bool
@@ -389,7 +490,7 @@ getBindNames p = do
           n  <- peek pn
           ac <- peekArray (fromIntegral n) pan
           al <- peek panl
-          mapM (flip ts al) ac
+          mapM (`ts` al) ac
         else throw StatementGetBindFailed
 
 getStatementInfo :: PtrStmt -> IO Data_StmtInfo
@@ -412,7 +513,7 @@ getQueryInfo
   :: PtrStmt -- ^ Statement
   -> Int     -- ^ the position of the column whose metadata is to be retrieved. The first position is 1.
   -> IO Data_QueryInfo
-getQueryInfo p pos = _getStmt (flip libStmtGetQueryInfo (fromIntegral pos)) peek p
+getQueryInfo p pos = _getStmt (`libStmtGetQueryInfo` fromIntegral pos) peek p
 
 -- | Returns the value of the column at the given position for the currently fetched row, 
 -- without needing to provide a variable. If the data type of the column needs to be overridden, 
@@ -438,7 +539,7 @@ getQueryValue p pos
 -- For queries this makes available metadata which can be acquired using the function 'getQueryInfo'. 
 -- For non-queries, out and in-out variables are populated with their values.
 executeStatement :: PtrStmt -> ExecMode -> IO Int
-executeStatement p mode = _getStmt (flip libStmtExecute (fe mode)) go p
+executeStatement p mode = _getStmt (`libStmtExecute` fe mode) go p
   where 
     go p | nullPtr == p = return 0
          | otherwise    = peekInt p
@@ -524,7 +625,7 @@ getBatchErrors p = do
   c <- getBatchErrorCount p
   if c <= 0
     then return []
-    else do
+    else 
       allocaArray c $ \par -> do
         ok <- isOk <$> libStmtGetBatchErrors p (fromIntegral c) par
         if ok then peekArray c par else throw StatementGetBatchErrorFailed
@@ -535,19 +636,19 @@ newTempLob :: PtrConn -> OracleTypeNum -> IO PtrLob
 newTempLob p otn = _get' LobOperateFailed (flip libConnNewTempLob $ fe otn) peek p
 
 closeLob :: PtrLob -> IO Bool
-closeLob p = isOk <$> libLobClose p
+closeLob = runOk libLobClose
 
 closeLobResource :: PtrLob -> IO Bool
-closeLobResource p = isOk <$> libLobCloseResource p
+closeLobResource = runOk libLobCloseResource
 
 copyLob :: PtrLob -> IO PtrLob
 copyLob = _get' LobOperateFailed libLobCopy peek
 
 flushLob :: PtrLob -> IO Bool
-flushLob p = isOk <$> libLobFlushBuffer p
+flushLob = runOk libLobFlushBuffer
 
 getLobBufferSize :: PtrLob -> Word64 -> IO Word64
-getLobBufferSize p size = _get' LobOperateFailed (flip libLobGetBufferSize (fromIntegral size)) peekInt p
+getLobBufferSize p size = _get' LobOperateFailed (`libLobGetBufferSize` fromIntegral size) peekInt p
 
 getLobChunkSize :: PtrLob -> IO Int64
 getLobChunkSize = _get' LobOperateFailed libLobGetChunkSize peekInt
@@ -573,7 +674,7 @@ getLobDirectoryAndFileName p
 setLobDirectoryAndFileName :: PtrLob -> (FilePath, String) -> IO Bool
 setLobDirectoryAndFileName p (fp, name)
   = useAsCStringLen (pack fp)   $ \(f, flen) ->
-    useAsCStringLen (pack name) $ \(n, nlen) -> do
+    useAsCStringLen (pack name) $ \(n, nlen) ->
       isOk <$> libLobSetDirectoryAndFileName p f (fromIntegral flen) n (fromIntegral nlen)
 
 lobFileExists :: PtrLob -> IO Bool
@@ -589,14 +690,14 @@ openLobResource :: PtrLob -> IO Bool
 openLobResource p = isOk <$> libLobOpenResource p
 
 releaseLob :: PtrLob -> IO Bool
-releaseLob p = isOk <$> libLobRelease p
+releaseLob = runOk libLobRelease
 
 trimLob :: PtrLob -> Int64 -> IO Bool
 trimLob p size = isOk <$> libLobTrim p (fromIntegral size)
 
 setLobFromBytes :: PtrLob -> ByteString -> IO Bool
 setLobFromBytes p buff
-  = useAsCStringLen buff $ \(b,blen) -> do
+  = useAsCStringLen buff $ \(b,blen) ->
       isOk <$> libLobSetFromBytes p b (fromIntegral blen)
 
 type BufferSize = Int64
@@ -627,7 +728,7 @@ copyObject :: PtrObject -> IO PtrObject
 copyObject = _get' LobOperateFailed libObjectCopy peek
 
 releaseObject :: PtrObject -> IO Bool
-releaseObject p = isOk <$> libObjectRelease p
+releaseObject = runOk libObjectRelease
 
 trimObject :: PtrObject -> Int -> IO Bool
 trimObject p c = isOk <$> libObjectTrim p (fromIntegral c)
@@ -682,13 +783,13 @@ getObjectAttrInfo :: PtrObjectAttr -> IO Data_ObjectAttrInfo
 getObjectAttrInfo = _get' ObjectOperateFailed libObjectAttrGetInfo peek
 
 objectAttrAddRef :: PtrObjectAttr -> IO Bool
-objectAttrAddRef p = isOk <$> libObjectAttrAddRef p
+objectAttrAddRef = runOk libObjectAttrAddRef
 
 releaseObjectAttr :: PtrObjectAttr -> IO Bool
-releaseObjectAttr p = isOk <$> libObjectAttrRelease p
+releaseObjectAttr = runOk libObjectAttrRelease
 
 objectTypeAddRef :: PtrObjectType-> IO Bool
-objectTypeAddRef p = isOk <$> libObjectTypeAddRef p
+objectTypeAddRef = runOk libObjectTypeAddRef
 
 createObjectByType :: PtrObjectType -> IO PtrObject
 createObjectByType = _get' ObjectOperateFailed libObjectTypeCreateObject peek
@@ -700,15 +801,15 @@ objectTypeGetInfo :: PtrObjectType -> IO Data_ObjectTypeInfo
 objectTypeGetInfo = _get' ObjectOperateFailed libObjectTypeGetInfo peek
 
 releaseObjectType :: PtrObjectType -> IO Bool
-releaseObjectType p = isOk <$> libObjectTypeRelease p
+releaseObjectType = runOk libObjectTypeRelease
 
 -- * Rowid Interface
 
 rowidAddRef :: PtrRowid -> IO Bool
-rowidAddRef p = isOk <$> libRowidAddRef p
+rowidAddRef = runOk libRowidAddRef
 
 releaseRowid :: PtrRowid -> IO Bool
-releaseRowid p = isOk <$> libRowidRelease p
+releaseRowid = runOk libRowidRelease
 
 rowidGetStringValue :: PtrRowid -> IO ByteString
 rowidGetStringValue p
@@ -749,7 +850,7 @@ newVar p otn ntn maxArraySize size sizeIsBytes isArray oto
 
 
 varAddRef :: PtrVar -> IO Bool
-varAddRef p = isOk <$> libVarAddRef p
+varAddRef = runOk libVarAddRef
 
 copyVar :: PtrVar -> Int -> PtrVar -> Int -> IO Bool
 copyVar to toPos from fromPos = isOk <$> libVarCopyData to (fromIntegral toPos) from (fromIntegral fromPos)
@@ -773,7 +874,7 @@ varGetSizeInBytes :: PtrVar -> IO Int
 varGetSizeInBytes = _get' ObjectOperateFailed libVarGetSizeInBytes peekInt
 
 releaseVar :: PtrVar -> IO Bool
-releaseVar p = isOk <$> libVarRelease p
+releaseVar = runOk libVarRelease
 
 setVarFromBytes :: PtrVar -> Int -> ByteString -> IO Bool
 setVarFromBytes p pos bytes
