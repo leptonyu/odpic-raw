@@ -1,5 +1,5 @@
 name:                odpic-raw
-version:             0.1.3
+version:             0.1.4
 -- synopsis:
 description:         A low-level client library for the Oracle database, implemented as
                      bindings to the C ODPI API.

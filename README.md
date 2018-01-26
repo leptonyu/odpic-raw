@@ -32,7 +32,7 @@ this project is not in stackage yet, please add `extra-deps` in `stack.yaml` con
 
 ```
 extra-deps:
-  - odpic-raw-0.1.2
+  - odpic-raw-0.1.3
 ```
 
 More Documents:
