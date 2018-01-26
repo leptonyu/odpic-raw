@@ -58,7 +58,7 @@ fb s | B.null s    = return (nullPtr,0)
 data DpiException
   = ErrorInfoException Data_ErrorInfo
   | VersionInfoNotFound
-  | ConnectionCreateFailed
+  | ConnectionCreateFailed Data_ErrorInfo
   | StatementCreateFailed
   | ConnectionPropNotFound ByteString
   | StatementExecuteFailed
