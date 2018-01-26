@@ -21,7 +21,7 @@ stack install odpic-raw
 
 Test:
 
-edit HSpec.hs, set `username`, `password`, `constr` for test oracle db
+edit [Spec.hs](https://github.com/leptonyu/odpic-raw/blob/master/test/Spec.hs), set `username`, `password`, `constr` for test oracle db
 ```
 stack test
 ```
