@@ -106,14 +106,14 @@ import           Data.ByteString.Char8 (pack, unpack)
 -- * Context Interface
 
 -- $context
--- Context handles are the top level handles created by the library and are used for all 
+-- Context handles are the top level handles created by the library and are used for all
 -- error handling as well as creating pools and standalone connections to the database.
 -- The first call to ODPI-C by any application must be 'createContext' which will create the context
---  as well as validate the version used by the application. Context handles are destroyed by 
+--  as well as validate the version used by the application. Context handles are destroyed by
 -- using the function 'destroyContext'.
 
--- | Creates a new context for interaction with the library. 
--- This is the first function that must be called and it must have completed successfully 
+-- | Creates a new context for interaction with the library.
+-- This is the first function that must be called and it must have completed successfully
 -- before any other functions can be called, including in other threads.
 createContext :: IO PtrContext
 createContext
@@ -141,9 +141,9 @@ getClientVersion p
       ok <- isOk <$> libContextGetClientVersion p pv
       if ok then peek pv else throwContextError p
 
--- | Returns error information for the last error that was raised by the library. 
+-- | Returns error information for the last error that was raised by the library.
 -- This function must be called with the same thread that generated the error.
---  It must also be called before any other ODPI-C library calls are made on 
+--  It must also be called before any other ODPI-C library calls are made on
 -- the calling thread since the error information specific to that thread is cleared
 --  at the start of every ODPI-C function call.
 getContextError :: PtrContext -> IO Data_ErrorInfo
@@ -154,10 +154,10 @@ throwContextError p = getContextError p >>= throw . ErrorInfoException
 
 -- * Connection Interface
 -- $connection
--- Connection handles are used to represent connections to the database. 
--- These can be standalone connections created by calling the function 'createConnetion'. 
--- They can be closed by calling the function 'closeConnection' or releasing the last reference 
--- to the connection by calling the function 'releaseConnection'. 
+-- Connection handles are used to represent connections to the database.
+-- These can be standalone connections created by calling the function 'createConnetion'.
+-- They can be closed by calling the function 'closeConnection' or releasing the last reference
+-- to the connection by calling the function 'releaseConnection'.
 -- Connection handles are used to create all handles other than session pools and context handles.
 
 
@@ -186,8 +186,8 @@ createConnection cxt username password connstr hcmp
 closeConnection :: ConnCloseMode -> PtrConn -> IO Bool
 closeConnection mode p = isOk <$> libConnClose p (fe mode) nullPtr 0
 
--- | Releases a reference to the connection. A count of the references to the connection is maintained 
--- and when this count reaches zero, the memory associated with the connection is freed and 
+-- | Releases a reference to the connection. A count of the references to the connection is maintained
+-- and when this count reaches zero, the memory associated with the connection is freed and
 -- the connection is closed or released back to the session pool if that has not already taken place
 --  using the function 'closeConnection'.
 releaseConnection :: PtrConn -> IO Bool
@@ -214,10 +214,10 @@ withConnection p username password connstr lang nchar
   where
     set l n v = v { encoding = l, nencoding = n} :: Data_CommonCreateParams
 
--- ** Transaction Interface 
+-- ** Transaction Interface
 
 -- | Begins a distributed transaction using the specified transaction id (XID) made up of the formatId, transactionId and branchId.
-beginTransaction 
+beginTransaction
   :: PtrConn    -- ^ Connection
   -> Int64      -- ^ formatId
   -> ByteString -- ^ transactionId
@@ -225,10 +225,10 @@ beginTransaction
   -> IO Bool
 beginTransaction p formatId transId branchId
   = useAsCStringLen transId  $ \(t,tlen) ->
-    useAsCStringLen branchId $ \(b,blen) -> isOk <$> 
+    useAsCStringLen branchId $ \(b,blen) -> isOk <$>
       libConnBeginDistribTrans p (fromIntegral formatId) t (fromIntegral tlen) b (fromIntegral blen)
 
--- | Prepares a distributed transaction for commit. 
+-- | Prepares a distributed transaction for commit.
 -- This function should only be called after 'beginTransaction' is called and before 'commitConnection' is called.
 prepareTransaction :: PtrConn -> IO Bool
 prepareTransaction p
@@ -285,9 +285,9 @@ getStmtCacheSize p
 
 -- * ConnectionPool Interace
 -- $pool
--- Pool handles are used to represent session pools. 
--- They are created using the function 'createPool' and can be closed by calling the function 'closePool' 
--- or releasing the last reference to the pool by calling the function 'releasePool'. 
+-- Pool handles are used to represent session pools.
+-- They are created using the function 'createPool' and can be closed by calling the function 'closePool'
+-- or releasing the last reference to the pool by calling the function 'releasePool'.
 -- Pools can be used to create connections by calling the function 'acquiredConnection'.
 
 -- | Acquires a connection from the pool and returns a reference to it. This reference should be released as soon as it is no longer needed.
@@ -299,16 +299,17 @@ poolAddRef :: PtrPool -> IO Bool
 poolAddRef = runOk libPoolAddRef
 
 -- | Creates a session pool which creates and maintains a group of stateless sessions to the database.
---  The main benefit of session pooling is performance since making a connection to the database is a time-consuming activity, 
+--  The main benefit of session pooling is performance since making a connection to the database is a time-consuming activity,
 -- especially when the database is remote.
-createPool 
+createPool
   :: PtrContext -- ^ Context
   -> ByteString -- ^ the name of the user used for authenticating the user
   -> ByteString -- ^  the password to use for authenticating the user
   -> ByteString -- ^ he connect string identifying the database to which a connection is to be established
   -> (Data_CommonCreateParams -> Data_CommonCreateParams) -- ^ custom 'Data_CommonCreateParams'
+  -> (Data_PoolCreateParams -> Data_PoolCreateParams)
   -> IO PtrPool
-createPool cxt username password connstr hcmp
+createPool cxt username password connstr hcmp hpcp
   = alloca $ \pc   ->
     alloca $ \pcmp ->
     alloca $ \pcop ->
@@ -317,8 +318,9 @@ createPool cxt username password connstr hcmp
     useAsCStringLen connstr  $ \(c,clen) -> do
       libContextInitCommonCreateParams cxt pcmp
       libContextInitPoolCreateParams   cxt pcop
-      a <- peek pcmp
-      poke pcmp $ hcmp a
+      peek pcmp >>= poke pcmp . hcmp
+      v <- peek pcop
+      poke pcop $ hpcp v {getMode = ModePoolGetWait}
       ok <- isOk <$> libPoolCreate cxt u (fromIntegral ulen) p (fromIntegral plen) c (fromIntegral clen) pcmp pcop pc
       if ok then peek pc else throwContextError cxt
 
@@ -326,11 +328,11 @@ createPool cxt username password connstr hcmp
 closePool :: PtrPool -> PoolCloseMode -> IO Bool
 closePool p mode = isOk <$> libPoolClose p (fe mode)
 
--- | Releases a reference to the pool. A count of the references to the pool is maintained 
--- and when this count reaches zero, the memory associated with the pool is freed 
+-- | Releases a reference to the pool. A count of the references to the pool is maintained
+-- and when this count reaches zero, the memory associated with the pool is freed
 -- and the session pool is closed if that has not already taken place using the function 'closePool'.
 releasePool :: PtrPool -> IO Bool
-releasePool = runOk libPoolRelease 
+releasePool = runOk libPoolRelease
 
 -- | with pool
 withPool
@@ -340,14 +342,16 @@ withPool
   -> ByteString -- ^ Connection String
   -> ByteString -- ^ NLS_LANG encoding
   -> ByteString -- ^ NLS_NCHAR encoding
+  -> Int
   -> (PtrPool -> IO a) -- ^ action use connection
   -> IO a
-withPool p username password connstr lang nchar
+withPool p username password connstr lang nchar thread
   = bracket
-      (createPool p username password connstr (set lang nchar))
+      (createPool p username password connstr (set lang nchar) (setP thread))
       (\c -> closePool c ModePoolCloseDefault `finally` releasePool c)
   where
     set l n v = v { encoding = l, nencoding = n} :: Data_CommonCreateParams
+    setP t  v = v { maxSessions = fromIntegral t } :: Data_PoolCreateParams
 
 withPoolConnection :: PtrPool -> (PtrConn -> IO a) -> IO a
 withPoolConnection p = bracket (acquiredConnection p) releaseConnection
@@ -391,12 +395,12 @@ setPoolTimeout p timeout = isOk <$> libPoolSetTimeout p (fromIntegral timeout)
 -- Statement handles are used to represent statements of all types (queries, DML, DDL and PL/SQL).
 --  They are created by calling the function 'createStatement'.
 -- They are also created implicitly when a variable of type 'OracleTypeStmt' is created.
---  Statement handles can be closed by calling the function 'closeStatement' 
+--  Statement handles can be closed by calling the function 'closeStatement'
 -- or by releasing the last reference to the statement by calling the function 'releaseStatement'.
 
--- | Returns a reference to a statement prepared for execution. 
+-- | Returns a reference to a statement prepared for execution.
 -- The reference should be released as soon as it is no longer needed.
-createStatement 
+createStatement
   :: PtrConn    -- ^ Connection
   -> Bool       -- ^ scrollable
   -> ByteString -- ^ SQL String
@@ -407,25 +411,25 @@ createStatement p scrollable sql
       ok <- isOk <$> libConnPrepareStmt p (fromBool scrollable) s (fromIntegral slen) nullPtr 0 ps
       if ok then peek ps else throw StatementCreateFailed
 
--- | Closes the statement and makes it unusable for further work immediately, 
+-- | Closes the statement and makes it unusable for further work immediately,
 -- rather than when the reference count reaches zero.
 closeStatement :: PtrStmt -> IO Bool
 closeStatement p = isOk <$> libStmtClose p nullPtr 0
 
--- | Releases a reference to the statement. A count of the references to the statement is maintained 
--- and when this count reaches zero, the memory associated with the statement is freed 
+-- | Releases a reference to the statement. A count of the references to the statement is maintained
+-- and when this count reaches zero, the memory associated with the statement is freed
 -- and the statement is closed if that has not already taken place using the function 'closeStatement'.
 releaseStatement :: PtrStmt -> IO Bool
 releaseStatement = runOk libStmtRelease
 
-withStatement 
+withStatement
   :: PtrConn    -- ^ Connection
   -> Bool       -- ^ scrollable
   -> ByteString -- ^ SQL String
   -> (PtrStmt -> IO a)
   -> IO a
 withStatement p scrollable sql
-  = bracket 
+  = bracket
       (createStatement p scrollable sql)
       (\c -> releaseStatement c `finally` closeStatement c)
 
@@ -436,7 +440,7 @@ scrollStatement p mode offset = isOk <$> libStmtScroll p (fe mode) (fromIntegral
 
 -- ** Statement Bind Vars
 
--- | Binds a variable to a named placeholder in the statement. 
+-- | Binds a variable to a named placeholder in the statement.
 -- A reference to the variable is retained by the library and is released when the statement itself is released or a new variable is bound to the same name.
 bindByName :: PtrStmt -> ByteString -> PtrVar -> IO Bool
 bindByName p name var
@@ -447,32 +451,32 @@ bindByName p name var
 bindByPosition :: PtrStmt -> Int -> PtrVar -> IO Bool
 bindByPosition p pos var = isOk <$> libStmtBindByPos p (fromIntegral pos) var
 
--- | Binds a value to a named placeholder in the statement without the need to create a variable directly. 
+-- | Binds a value to a named placeholder in the statement without the need to create a variable directly.
 -- One is created implicitly and released when the statement is released or a new value is bound to the same name.
 bindValueByName :: PtrStmt -> ByteString -> NativeTypeNum -> PtrData -> IO Bool
 bindValueByName p name ntn dt
   = useAsCStringLen name $ \(n,nlen) -> isOk <$> libStmtBindValueByName p n (fromIntegral nlen) (fe ntn) dt
 
--- | Binds a value to a placeholder in the statement without the need to create a variable directly. 
+-- | Binds a value to a placeholder in the statement without the need to create a variable directly.
 -- One is created implicitly and released when the statement is released or a new value is bound to the same position.
 bindValueByPosition :: PtrStmt -> Int -> NativeTypeNum -> PtrData -> IO Bool
 bindValueByPosition p pos ntn dt = isOk <$> libStmtBindValueByPos p (fromIntegral pos) (fe ntn) dt
 
--- | Defines the variable that will be used to fetch rows from the statement. 
--- A reference to the variable will be retained until the next define is performed on the same position 
+-- | Defines the variable that will be used to fetch rows from the statement.
+-- A reference to the variable will be retained until the next define is performed on the same position
 -- or the statement is closed.
 define :: PtrStmt -> Int -> PtrVar -> IO Bool
 define p pos var = isOk <$> libStmtDefine p (fromIntegral pos) var
 
--- | Defines the type of data that will be used to fetch rows from the statement. 
--- This is intended for use with the function 'getQueryValue', when the default data type 
--- derived from the column metadata needs to be overridden by the application. 
+-- | Defines the type of data that will be used to fetch rows from the statement.
+-- This is intended for use with the function 'getQueryValue', when the default data type
+-- derived from the column metadata needs to be overridden by the application.
 -- Internally, a variable is created with the specified data type and size.
 defineValue :: PtrStmt -> Int -> OracleTypeNum -> NativeTypeNum -> Int -> Bool -> PtrObjectType -> IO Bool
 defineValue p pos otn ntn size isSizeInByte ot = isOk <$> libStmtDefineValue p (fromIntegral pos) (fe otn) (fe ntn) (fromIntegral size) (fromBool isSizeInByte) ot
 
 -- | Returns the number of bind variables in the prepared statement.
--- In SQL statements this is the total number of bind variables whereas in PL/SQL statements 
+-- In SQL statements this is the total number of bind variables whereas in PL/SQL statements
 -- this is the count of the unique bind variables.
 getBindCount :: PtrStmt -> IO Int
 getBindCount = _getStmt libStmtGetBindCount peekInt
@@ -509,17 +513,17 @@ getNumberQueryColumns :: PtrStmt -> IO Int
 getNumberQueryColumns = _getStmt libStmtGetNumQueryColumns peekInt
 
 -- | Returns information about the column that is being queried.
-getQueryInfo 
+getQueryInfo
   :: PtrStmt -- ^ Statement
   -> Int     -- ^ the position of the column whose metadata is to be retrieved. The first position is 1.
   -> IO Data_QueryInfo
 getQueryInfo p pos = _getStmt (`libStmtGetQueryInfo` fromIntegral pos) peek p
 
--- | Returns the value of the column at the given position for the currently fetched row, 
--- without needing to provide a variable. If the data type of the column needs to be overridden, 
--- the function 'defineValue' can be called to specify a different type after executing 
+-- | Returns the value of the column at the given position for the currently fetched row,
+-- without needing to provide a variable. If the data type of the column needs to be overridden,
+-- the function 'defineValue' can be called to specify a different type after executing
 -- the statement but before fetching any data.
-getQueryValue 
+getQueryValue
   :: PtrStmt -- ^ Statement
   -> Int     -- ^ the position of the column whose metadata is to be retrieved. The first position is 1.
   -> IO DataValue
@@ -535,12 +539,12 @@ getQueryValue p pos
 
 -- ** Execute Statement
 
--- | Executes the statement using the bound values. 
--- For queries this makes available metadata which can be acquired using the function 'getQueryInfo'. 
+-- | Executes the statement using the bound values.
+-- For queries this makes available metadata which can be acquired using the function 'getQueryInfo'.
 -- For non-queries, out and in-out variables are populated with their values.
 executeStatement :: PtrStmt -> ExecMode -> IO Int
 executeStatement p mode = _getStmt (`libStmtExecute` fe mode) go p
-  where 
+  where
     go p | nullPtr == p = return 0
          | otherwise    = peekInt p
 
@@ -567,11 +571,11 @@ type Page = (PageOffset, PageLimit)
 type FetchRows a = PtrStmt -> Page -> IO a
 
 -- | Returns the number of rows that are available in the buffers defined for the query.
---  If no rows are currently available in the buffers, an internal fetch takes place in order to populate them, 
--- if rows are available. If the statement does not refer to a query an error is returned. 
--- All columns that have not been defined prior to this call are implicitly defined using 
+--  If no rows are currently available in the buffers, an internal fetch takes place in order to populate them,
+-- if rows are available. If the statement does not refer to a query an error is returned.
+-- All columns that have not been defined prior to this call are implicitly defined using
 -- the metadata made available when the statement was executed.
-fetchRows 
+fetchRows
   :: PtrStmt -- ^ Statement
   -> Int     -- ^  the maximum number of rows to fetch. If the number of rows available exceeds this value only this number will be fetched.
   -> IO (Bool, [DataValue])
@@ -589,18 +593,18 @@ fetchRows p maxRow
           return (more, vs)
         else throw StatementFetchRowFailed
     where
-      fetch st offset limit = do 
+      fetch st offset limit = do
         count <- getRowCount p
         mapM (getQueryValue p) [1..count]
 
--- | Returns the number of rows affected by the last DML statement that was executed 
+-- | Returns the number of rows affected by the last DML statement that was executed
 -- or the number of rows currently fetched from a query. In all other cases 0 is returned.
 getRowCount :: PtrStmt -> IO Int
 getRowCount = _getStmt libStmtGetRowCount peekInt
 
 
--- | Returns an array of row counts affected by the last invocation of 'executeMany' 
--- with the array DML rowcounts mode enabled. 
+-- | Returns an array of row counts affected by the last invocation of 'executeMany'
+-- with the array DML rowcounts mode enabled.
 -- This feature is only available if both client and server are at 12.1.
 getRowCounts :: PtrStmt -> IO [Int]
 getRowCounts p
@@ -625,7 +629,7 @@ getBatchErrors p = do
   c <- getBatchErrorCount p
   if c <= 0
     then return []
-    else 
+    else
       allocaArray c $ \par -> do
         ok <- isOk <$> libStmtGetBatchErrors p (fromIntegral c) par
         if ok then peekArray c par else throw StatementGetBatchErrorFailed
@@ -820,14 +824,14 @@ rowidGetStringValue p
 
 -- * Var Interface
 -- $var
--- Variable handles are used to represent memory areas used for transferring data to and from the database. 
+-- Variable handles are used to represent memory areas used for transferring data to and from the database.
 -- They are created by calling the function 'newVar'.
 --  They are destroyed when the last reference to the variable is released by calling the function 'releaseVar'.
---  They are bound to statements by calling the function 'bindByName' or the function 'bindByPosition'. 
+--  They are bound to statements by calling the function 'bindByName' or the function 'bindByPosition'.
 -- They can also be used for fetching data from the database by calling the function 'define'.
 
 -- | Returns a reference to a new variable which can be used for binding data to a statement
---  or providing a buffer for querying data from the database. 
+--  or providing a buffer for querying data from the database.
 -- The reference should be released as soon as it is no longer needed.
 newVar :: PtrConn       -- ^ Connection
        -> OracleTypeNum -- ^ Oracle type enum

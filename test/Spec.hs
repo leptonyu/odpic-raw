@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-import Test.Hspec
-import Test.QuickCheck
+import           Test.Hspec
+import           Test.QuickCheck
 
-import Database.Dpi
+import           Database.Dpi
 
 -- define this 3 parameters before run test
 username = "username"
@@ -34,9 +34,9 @@ main = hspec $ do
       getExternalName  conn >>= print
       getEdition       conn >>= print
       getCurrentSchema conn >>= print
-      ok    <- releaseConnection conn 
+      ok    <- releaseConnection conn
       ok `shouldBe` True
-      notOk <- releaseConnection conn 
+      notOk <- releaseConnection conn
       notOk `shouldBe` False
       pNOk  <- pingConnection conn
       pNOk `shouldBe` False
@@ -60,8 +60,8 @@ main = hspec $ do
         getImplicitResult     st >>= print
         getQueryInfo  st 1       >>= print
 
-        mayC <- fetch st 
-        mayC `shouldBe` Just 0 
+        mayC <- fetch st
+        mayC `shouldBe` Just 0
 
         getQueryValue st 1       >>= print
 
@@ -85,7 +85,7 @@ main = hspec $ do
 
 
     it "Pool Test" $ withContext $ \cxt -> do
-      withPool cxt username password connstr "" "" $ \pool -> do
+      withPool cxt username password connstr "" "" 1 $ \pool -> do
         withPoolConnection pool $ \conn -> withStatement conn False "SELECT 1,'hhh',SYSDATE FROM DUAL" $ \st -> do
           r <- executeStatement st ModeExecDefault
           r `shouldBe` 3

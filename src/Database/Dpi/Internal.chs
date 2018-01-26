@@ -686,7 +686,18 @@ data Data_PoolCreateParams  = Data_PoolCreateParams
 instance Storable Data_PoolCreateParams where
   sizeOf    _ = {#sizeof  PoolCreateParams #}
   alignment _ = {#alignof PoolCreateParams #}
-  poke      _ = noImplement
+  poke      p Data_PoolCreateParams{..} = do
+    (e,elen) <- fb outPoolName   
+    {#set PoolCreateParams -> minSessions       #} p minSessions
+    {#set PoolCreateParams -> maxSessions       #} p maxSessions
+    {#set PoolCreateParams -> sessionIncrement  #} p sessionIncrement
+    {#set PoolCreateParams -> pingInterval      #} p pingInterval
+    {#set PoolCreateParams -> pingTimeout       #} p pingTimeout
+    {#set PoolCreateParams -> homogeneous       #} p homogeneous
+    {#set PoolCreateParams -> externalAuth      #} p externalAuth
+    {#set PoolCreateParams -> getMode           #} p (fe              getMode)
+    {#set PoolCreateParams -> outPoolName       #} p e
+    {#set PoolCreateParams -> outPoolNameLength #} p (fromIntegral    elen)
   peek      p = do
     minSessions       <- {#get PoolCreateParams -> minSessions       #} p
     maxSessions       <- {#get PoolCreateParams -> maxSessions       #} p
