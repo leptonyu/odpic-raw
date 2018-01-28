@@ -70,7 +70,7 @@ main = hspec $ do
 
     it "Statement 2 Test" $ withContext $ \cxt -> do
       withConnection cxt username password connstr "" "" $ \conn -> do
-        withStatement conn False "SELECT 1,'hhh',SYSDATE FROM DUAL" $ \st -> do
+        withStatement conn False "SELECT 1,'中文' as 文字,SYSDATE FROM DUAL" $ \st -> do
           r <- executeStatement st ModeExecDefault
           r `shouldBe` 3
           f <- fetch st
@@ -82,19 +82,12 @@ main = hspec $ do
           f <- fetch st
           f `shouldBe` Just 0
           mapM (getQueryValue st) [1..r] >>= print
-
 
     it "Pool Test" $ withContext $ \cxt -> do
-      withPool cxt username password connstr "" "" 1 $ \pool -> do
-        withPoolConnection pool $ \conn -> withStatement conn False "SELECT 1,'hhh',SYSDATE FROM DUAL" $ \st -> do
-          r <- executeStatement st ModeExecDefault
-          r `shouldBe` 3
-          f <- fetch st
-          f `shouldBe` Just 0
-          mapM (getQueryValue st) [1..r] >>= print
-        withPoolConnection pool $ \conn -> withStatement conn False "SELECT 1,'hhh',SYSDATE FROM DUAL" $ \st -> do
-          r <- executeStatement st ModeExecDefault
-          r `shouldBe` 3
-          f <- fetch st
-          f `shouldBe` Just 0
-          mapM (getQueryValue st) [1..r] >>= print
+      withPool cxt username password connstr "" "" 2 $ \pool ->
+        withPoolConnection pool $ \conn -> do
+          let f _ = withStatement conn False "SELECT 1,'中文' as 文字,SYSDATE FROM DUAL" $ \st -> do
+                      r <- executeStatement st ModeExecDefault
+                      f <- fetch st
+                      mapM (getQueryValue st) [1..r] >>= print
+          mapM_ f [1..100]

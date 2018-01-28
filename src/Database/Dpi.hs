@@ -101,7 +101,7 @@ import           Database.Dpi.Internal
 import           Database.Dpi.Prelude
 
 import           Control.Exception
-import           Data.ByteString.Char8 (pack, unpack)
+import qualified Data.Text             as T
 
 -- * Context Interface
 
@@ -163,18 +163,18 @@ throwContextError p = getContextError p >>= throw . ErrorInfoException
 
 -- | Creates a standalone connection to a database or acquires a connection from a session pool and returns a reference to the connection.
 createConnection :: PtrContext -- ^ Context
-                 -> ByteString -- ^ the name of the user used for authenticating the user
-                 -> ByteString -- ^  the password to use for authenticating the user
-                 -> ByteString -- ^ he connect string identifying the database to which a connection is to be established
+                 -> Text -- ^ the name of the user used for authenticating the user
+                 -> Text -- ^  the password to use for authenticating the user
+                 -> Text -- ^ he connect string identifying the database to which a connection is to be established
                  -> (Data_CommonCreateParams -> Data_CommonCreateParams) -- ^ custom 'Data_CommonCreateParams'
                  -> IO PtrConn
 createConnection cxt username password connstr hcmp
   = alloca $ \pc   ->
     alloca $ \pcmp ->
     alloca $ \pcop ->
-    useAsCStringLen username $ \(u,ulen) ->
-    useAsCStringLen password $ \(p,plen) ->
-    useAsCStringLen connstr  $ \(c,clen) -> do
+    withCStringLen (T.unpack username) $ \(u,ulen) ->
+    withCStringLen (T.unpack password) $ \(p,plen) ->
+    withCStringLen (T.unpack connstr)  $ \(c,clen) -> do
       libContextInitCommonCreateParams cxt pcmp
       libContextInitConnCreateParams   cxt pcop
       a <- peek pcmp
@@ -200,11 +200,11 @@ pingConnection = runOk libConnPing
 -- | with connection
 withConnection
   :: PtrContext -- ^ Context
-  -> ByteString -- ^ Username
-  -> ByteString -- ^ Password
-  -> ByteString -- ^ Connection String
-  -> ByteString -- ^ NLS_LANG encoding
-  -> ByteString -- ^ NLS_NCHAR encoding
+  -> Text -- ^ Username
+  -> Text -- ^ Password
+  -> Text -- ^ Connection String
+  -> Text -- ^ NLS_LANG encoding
+  -> Text -- ^ NLS_NCHAR encoding
   -> (PtrConn -> IO a) -- ^ action use connection
   -> IO a
 withConnection p username password connstr lang nchar
@@ -220,12 +220,12 @@ withConnection p username password connstr lang nchar
 beginTransaction
   :: PtrConn    -- ^ Connection
   -> Int64      -- ^ formatId
-  -> ByteString -- ^ transactionId
-  -> ByteString -- ^ branchId
+  -> Text -- ^ transactionId
+  -> Text -- ^ branchId
   -> IO Bool
 beginTransaction p formatId transId branchId
-  = useAsCStringLen transId  $ \(t,tlen) ->
-    useAsCStringLen branchId $ \(b,blen) -> isOk <$>
+  = withCStringLen (T.unpack transId)  $ \(t,tlen) ->
+    withCStringLen (T.unpack branchId) $ \(b,blen) -> isOk <$>
       libConnBeginDistribTrans p (fromIntegral formatId) t (fromIntegral tlen) b (fromIntegral blen)
 
 -- | Prepares a distributed transaction for commit.
@@ -246,28 +246,28 @@ rollbackConnection = runOk libConnRollback
 
 -- ** Information from Connection
 
-getCurrentSchema :: PtrConn -> IO ByteString
+getCurrentSchema :: PtrConn -> IO Text
 getCurrentSchema = _getConn "currentSchema" libConnGetCurrentSchema
 
-getEdition :: PtrConn -> IO ByteString
+getEdition :: PtrConn -> IO Text
 getEdition = _getConn "edition" libConnGetEdition
 
-getExternalName :: PtrConn -> IO ByteString
+getExternalName :: PtrConn -> IO Text
 getExternalName = _getConn "externalName" libConnGetExternalName
 
-getInternalName :: PtrConn -> IO ByteString
+getInternalName :: PtrConn -> IO Text
 getInternalName = _getConn "internalName" libConnGetInternalName
 
-getLTXID :: PtrConn -> IO ByteString
+getLTXID :: PtrConn -> IO Text
 getLTXID = _getConn "LTXID" libConnGetLTXID
 
-getServerVersion :: PtrConn -> IO (ByteString, Data_VersionInfo)
+getServerVersion :: PtrConn -> IO (Text, Data_VersionInfo)
 getServerVersion = _getConnStrAndObj libConnGetServerVersion "serverVersion"
 
-getObjectType :: PtrConn -> ByteString -> IO PtrObjectType
+getObjectType :: PtrConn -> Text -> IO PtrObjectType
 getObjectType p name
   = alloca $ \pot ->
-    useAsCStringLen name $ \(n,nlen) -> do
+    withCStringLen (T.unpack name) $ \(n,nlen) -> do
       ok <- isOk <$> libConnGetObjectType p n (fromIntegral nlen)  pot
       if ok then peek pot else throw $ ConnectionPropNotFound $ "objectType_" <> name
 
@@ -303,9 +303,9 @@ poolAddRef = runOk libPoolAddRef
 -- especially when the database is remote.
 createPool
   :: PtrContext -- ^ Context
-  -> ByteString -- ^ the name of the user used for authenticating the user
-  -> ByteString -- ^  the password to use for authenticating the user
-  -> ByteString -- ^ he connect string identifying the database to which a connection is to be established
+  -> Text -- ^ the name of the user used for authenticating the user
+  -> Text -- ^  the password to use for authenticating the user
+  -> Text -- ^ he connect string identifying the database to which a connection is to be established
   -> (Data_CommonCreateParams -> Data_CommonCreateParams) -- ^ custom 'Data_CommonCreateParams'
   -> (Data_PoolCreateParams -> Data_PoolCreateParams)
   -> IO PtrPool
@@ -313,9 +313,9 @@ createPool cxt username password connstr hcmp hpcp
   = alloca $ \pc   ->
     alloca $ \pcmp ->
     alloca $ \pcop ->
-    useAsCStringLen username $ \(u,ulen) ->
-    useAsCStringLen password $ \(p,plen) ->
-    useAsCStringLen connstr  $ \(c,clen) -> do
+    withCStringLen (T.unpack username) $ \(u,ulen) ->
+    withCStringLen (T.unpack password) $ \(p,plen) ->
+    withCStringLen (T.unpack connstr)  $ \(c,clen) -> do
       libContextInitCommonCreateParams cxt pcmp
       libContextInitPoolCreateParams   cxt pcop
       peek pcmp >>= poke pcmp . hcmp
@@ -337,11 +337,11 @@ releasePool = runOk libPoolRelease
 -- | with pool
 withPool
   :: PtrContext -- ^ Context
-  -> ByteString -- ^ Username
-  -> ByteString -- ^ Password
-  -> ByteString -- ^ Connection String
-  -> ByteString -- ^ NLS_LANG encoding
-  -> ByteString -- ^ NLS_NCHAR encoding
+  -> Text -- ^ Username
+  -> Text -- ^ Password
+  -> Text -- ^ Connection String
+  -> Text -- ^ NLS_LANG encoding
+  -> Text -- ^ NLS_NCHAR encoding
   -> Int
   -> (PtrPool -> IO a) -- ^ action use connection
   -> IO a
@@ -350,8 +350,9 @@ withPool p username password connstr lang nchar thread
       (createPool p username password connstr (set lang nchar) (setP thread))
       (\c -> closePool c ModePoolCloseDefault `finally` releasePool c)
   where
-    set l n v = v { encoding = l, nencoding = n} :: Data_CommonCreateParams
-    setP t  v = v { maxSessions = fromIntegral t } :: Data_PoolCreateParams
+    set l n v = v { encoding  = if T.null l then  encoding (v :: Data_CommonCreateParams) else l
+                  , nencoding = if T.null n then nencoding (v :: Data_CommonCreateParams) else n} :: Data_CommonCreateParams
+    setP t  v = v { maxSessions = fromIntegral t, sessionIncrement = 1 } :: Data_PoolCreateParams
 
 withPoolConnection :: PtrPool -> (PtrConn -> IO a) -> IO a
 withPoolConnection p = bracket (acquiredConnection p) releaseConnection
@@ -403,11 +404,12 @@ setPoolTimeout p timeout = isOk <$> libPoolSetTimeout p (fromIntegral timeout)
 createStatement
   :: PtrConn    -- ^ Connection
   -> Bool       -- ^ scrollable
-  -> ByteString -- ^ SQL String
+  -> Text -- ^ SQL String
   -> IO PtrStmt
 createStatement p scrollable sql
   = alloca $ \ps ->
-    useAsCStringLen sql $ \(s,slen) -> do
+    withCStringLen (T.unpack sql) $ \(s,slen) -> do
+      -- peekCStringLen (s,slen) >>= putStrLn
       ok <- isOk <$> libConnPrepareStmt p (fromBool scrollable) s (fromIntegral slen) nullPtr 0 ps
       if ok then peek ps else throw StatementCreateFailed
 
@@ -425,26 +427,30 @@ releaseStatement = runOk libStmtRelease
 withStatement
   :: PtrConn    -- ^ Connection
   -> Bool       -- ^ scrollable
-  -> ByteString -- ^ SQL String
+  -> Text -- ^ SQL String
   -> (PtrStmt -> IO a)
   -> IO a
-withStatement p scrollable sql
+withStatement p scrollable sql f
   = bracket
       (createStatement p scrollable sql)
-      (\c -> releaseStatement c `finally` closeStatement c)
+      releaseStatement
+      $ \s -> do a <- f s
+                 a `seq` return a
 
 -- | Scrolls the statement to the position in the cursor specified by the mode and offset.
 scrollStatement :: PtrStmt -> FetchMode -> Int -> IO Bool
 scrollStatement p mode offset = isOk <$> libStmtScroll p (fe mode) (fromIntegral offset) 0
 
+statementAddRef :: PtrStmt -> IO Bool
+statementAddRef p = isOk <$> libStmtAddRef p
 
 -- ** Statement Bind Vars
 
 -- | Binds a variable to a named placeholder in the statement.
 -- A reference to the variable is retained by the library and is released when the statement itself is released or a new variable is bound to the same name.
-bindByName :: PtrStmt -> ByteString -> PtrVar -> IO Bool
+bindByName :: PtrStmt -> Text -> PtrVar -> IO Bool
 bindByName p name var
-  = useAsCStringLen name $ \(n,nlen) -> isOk <$> libStmtBindByName p n (fromIntegral nlen) var
+  = withCStringLen (T.unpack name) $ \(n,nlen) -> isOk <$> libStmtBindByName p n (fromIntegral nlen) var
 
 -- | Binds a variable to a placeholder in the statement by position.
 --  A reference to the variable is retained by the library and is released when the statement itself is released or a new variable is bound to the same position.
@@ -453,9 +459,9 @@ bindByPosition p pos var = isOk <$> libStmtBindByPos p (fromIntegral pos) var
 
 -- | Binds a value to a named placeholder in the statement without the need to create a variable directly.
 -- One is created implicitly and released when the statement is released or a new value is bound to the same name.
-bindValueByName :: PtrStmt -> ByteString -> NativeTypeNum -> PtrData -> IO Bool
+bindValueByName :: PtrStmt -> Text -> NativeTypeNum -> PtrData -> IO Bool
 bindValueByName p name ntn dt
-  = useAsCStringLen name $ \(n,nlen) -> isOk <$> libStmtBindValueByName p n (fromIntegral nlen) (fe ntn) dt
+  = withCStringLen (T.unpack name) $ \(n,nlen) -> isOk <$> libStmtBindValueByName p n (fromIntegral nlen) (fe ntn) dt
 
 -- | Binds a value to a placeholder in the statement without the need to create a variable directly.
 -- One is created implicitly and released when the statement is released or a new value is bound to the same position.
@@ -479,10 +485,10 @@ defineValue p pos otn ntn size isSizeInByte ot = isOk <$> libStmtDefineValue p (
 -- In SQL statements this is the total number of bind variables whereas in PL/SQL statements
 -- this is the count of the unique bind variables.
 getBindCount :: PtrStmt -> IO Int
-getBindCount = _getStmt libStmtGetBindCount peekInt
+getBindCount = _getStmt "getBindCount" libStmtGetBindCount peekInt
 
 -- | Returns the names of the unique bind variables in the prepared statement.
-getBindNames :: PtrStmt -> IO [ByteString]
+getBindNames :: PtrStmt -> IO [Text]
 getBindNames p = do
   c <- getBindCount p
   alloca $ \pn  ->
@@ -498,26 +504,26 @@ getBindNames p = do
         else throw StatementGetBindFailed
 
 getStatementInfo :: PtrStmt -> IO Data_StmtInfo
-getStatementInfo = _getStmt libStmtGetInfo peek
+getStatementInfo = _getStmt "getStatementInfo" libStmtGetInfo peek
 
 getFetchArraySize :: PtrStmt -> IO Int
-getFetchArraySize = _getStmt libStmtGetFetchArraySize peekInt
+getFetchArraySize = _getStmt "getFetchArraySize" libStmtGetFetchArraySize peekInt
 
 setFetchArraySize :: PtrStmt -> Int -> IO Bool
 setFetchArraySize p pos = isOk <$> libStmtSetFetchArraySize p (fromIntegral pos)
 
 getImplicitResult :: PtrStmt -> IO (Maybe PtrStmt)
-getImplicitResult = _getStmt libStmtGetImplicitResult (mapM peek . toMaybePtr)
+getImplicitResult = _getStmt "getImplicitResult" libStmtGetImplicitResult (mapM peek . toMaybePtr)
 
 getNumberQueryColumns :: PtrStmt -> IO Int
-getNumberQueryColumns = _getStmt libStmtGetNumQueryColumns peekInt
+getNumberQueryColumns = _getStmt "getNumberQueryColumns" libStmtGetNumQueryColumns peekInt
 
 -- | Returns information about the column that is being queried.
 getQueryInfo
   :: PtrStmt -- ^ Statement
   -> Int     -- ^ the position of the column whose metadata is to be retrieved. The first position is 1.
   -> IO Data_QueryInfo
-getQueryInfo p pos = _getStmt (`libStmtGetQueryInfo` fromIntegral pos) peek p
+getQueryInfo p pos = _getStmt "getQueryInfo" (`libStmtGetQueryInfo` fromIntegral pos) peek p
 
 -- | Returns the value of the column at the given position for the currently fetched row,
 -- without needing to provide a variable. If the data type of the column needs to be overridden,
@@ -535,7 +541,7 @@ getQueryValue p pos
         then do
           t <- te <$> peek pt
           peek pd >>= _get t
-        else throw StatementFetchFailed
+        else throw (StatementFetchFailed "getQueryValue")
 
 -- ** Execute Statement
 
@@ -543,7 +549,7 @@ getQueryValue p pos
 -- For queries this makes available metadata which can be acquired using the function 'getQueryInfo'.
 -- For non-queries, out and in-out variables are populated with their values.
 executeStatement :: PtrStmt -> ExecMode -> IO Int
-executeStatement p mode = _getStmt (`libStmtExecute` fe mode) go p
+executeStatement p mode = _getStmt "executeStatement" (`libStmtExecute` fe mode) go p
   where
     go p | nullPtr == p = return 0
          | otherwise    = peekInt p
@@ -562,7 +568,7 @@ fetch p
         then do
           found <- toBool <$> peek pf
           if found then (Just . fromIntegral) <$> peek pr else return Nothing
-        else throw StatementFetchFailed
+        else throw (StatementFetchFailed "fetch")
 
 -- Index, RowNum
 type PageOffset = Int64
@@ -600,7 +606,7 @@ fetchRows p maxRow
 -- | Returns the number of rows affected by the last DML statement that was executed
 -- or the number of rows currently fetched from a query. In all other cases 0 is returned.
 getRowCount :: PtrStmt -> IO Int
-getRowCount = _getStmt libStmtGetRowCount peekInt
+getRowCount = _getStmt "getRowCount" libStmtGetRowCount peekInt
 
 
 -- | Returns an array of row counts affected by the last invocation of 'executeMany'
@@ -616,13 +622,13 @@ getRowCounts p
           c   <- peek pc
           pcs <- peekArray (fromIntegral c) pac
           mapM peekInt pcs
-        else throw StatementFetchFailed
+        else throw (StatementFetchFailed "getRowCounts")
 
 getSubscrQueryId :: PtrStmt -> IO Word64
-getSubscrQueryId = _getStmt libStmtGetSubscrQueryId peekInt
+getSubscrQueryId = _getStmt "getSubscrQueryId" libStmtGetSubscrQueryId peekInt
 
 getBatchErrorCount :: PtrStmt -> IO Int
-getBatchErrorCount = _getStmt libStmtGetBatchErrorCount peekInt
+getBatchErrorCount = _getStmt "getBatchErrorCount" libStmtGetBatchErrorCount peekInt
 
 getBatchErrors :: PtrStmt -> IO [Data_ErrorInfo]
 getBatchErrors p = do
@@ -672,13 +678,13 @@ getLobDirectoryAndFileName p
           nlen <- peek pnlen
           fp   <- ts d dlen
           name <- ts n nlen
-          return (unpack fp, unpack name)
+          return (T.unpack fp, T.unpack name)
         else throw LobOperateFailed
 
 setLobDirectoryAndFileName :: PtrLob -> (FilePath, String) -> IO Bool
 setLobDirectoryAndFileName p (fp, name)
-  = useAsCStringLen (pack fp)   $ \(f, flen) ->
-    useAsCStringLen (pack name) $ \(n, nlen) ->
+  = withCStringLen fp   $ \(f, flen) ->
+    withCStringLen name $ \(n, nlen) ->
       isOk <$> libLobSetDirectoryAndFileName p f (fromIntegral flen) n (fromIntegral nlen)
 
 lobFileExists :: PtrLob -> IO Bool
@@ -699,14 +705,14 @@ releaseLob = runOk libLobRelease
 trimLob :: PtrLob -> Int64 -> IO Bool
 trimLob p size = isOk <$> libLobTrim p (fromIntegral size)
 
-setLobFromBytes :: PtrLob -> ByteString -> IO Bool
+setLobFromBytes :: PtrLob -> Text -> IO Bool
 setLobFromBytes p buff
-  = useAsCStringLen buff $ \(b,blen) ->
+  = withCStringLen (T.unpack buff) $ \(b,blen) ->
       isOk <$> libLobSetFromBytes p b (fromIntegral blen)
 
 type BufferSize = Int64
 
-readLobBytes :: PtrLob -> Page -> BufferSize -> IO ByteString
+readLobBytes :: PtrLob -> Page -> BufferSize -> IO Text
 readLobBytes p (offset, num) bufferSize
   = alloca $ \pb    ->
     alloca $ \pblen -> do
@@ -715,12 +721,12 @@ readLobBytes p (offset, num) bufferSize
       if ok
         then do
           blen <- peek pblen
-          packCStringLen (pb, fromIntegral blen)
+          T.pack <$> peekCStringLen (pb, fromIntegral blen)
         else throw LobOperateFailed
 
-writeLobBytes :: PtrLob -> PageOffset -> ByteString -> IO Bool
+writeLobBytes :: PtrLob -> PageOffset -> Text -> IO Bool
 writeLobBytes p size buff
-  = useAsCStringLen buff $ \(b,blen) ->
+  = withCStringLen (T.unpack buff) $ \(b,blen) ->
       isOk <$> libLobWriteBytes p (fromIntegral size) b (fromIntegral blen)
 
 -- * Object Interface
@@ -815,7 +821,7 @@ rowidAddRef = runOk libRowidAddRef
 releaseRowid :: PtrRowid -> IO Bool
 releaseRowid = runOk libRowidRelease
 
-rowidGetStringValue :: PtrRowid -> IO ByteString
+rowidGetStringValue :: PtrRowid -> IO Text
 rowidGetStringValue p
   = alloca $ \ps    ->
     alloca $ \pslen -> do
@@ -880,9 +886,9 @@ varGetSizeInBytes = _get' ObjectOperateFailed libVarGetSizeInBytes peekInt
 releaseVar :: PtrVar -> IO Bool
 releaseVar = runOk libVarRelease
 
-setVarFromBytes :: PtrVar -> Int -> ByteString -> IO Bool
+setVarFromBytes :: PtrVar -> Int -> Text -> IO Bool
 setVarFromBytes p pos bytes
-  = useAsCStringLen bytes $ \(b,blen) -> isOk <$> libVarSetFromBytes p (fromIntegral pos) b (fromIntegral blen)
+  = withCStringLen (T.unpack bytes) $ \(b,blen) -> isOk <$> libVarSetFromBytes p (fromIntegral pos) b (fromIntegral blen)
 
 setVarFromLob :: PtrVar -> Int -> PtrLob -> IO Bool
 setVarFromLob p pos lob = isOk <$> libVarSetFromLob p (fromIntegral pos) lob

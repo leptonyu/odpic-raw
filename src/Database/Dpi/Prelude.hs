@@ -3,18 +3,14 @@ module Database.Dpi.Prelude
   , module Foreign.C.String
   , module Foreign.C.Types
   , module Database.Dpi.Prelude
-  , packCString
-  , packCStringLen
-  , useAsCString
-  , useAsCStringLen
-  , ByteString
   , join
   , (<>)
+  , Text
   ) where
 
 import           Control.Monad    (join)
-import           Data.ByteString
 import           Data.Monoid      ((<>))
+import           Data.Text
 import           Foreign
 import           Foreign.C.String
 import           Foreign.C.Types

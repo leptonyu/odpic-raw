@@ -7,9 +7,8 @@
 module Database.Dpi.Internal where
 
 import Control.Exception
-import Database.Dpi.Prelude
-import Data.ByteString.Char8(unpack)
-import qualified Data.ByteString as B
+import Database.Dpi.Prelude 
+import qualified Data.Text as T
 
 #include <dpi.h>
 
@@ -42,21 +41,21 @@ noImplement = error "Not supported yet"
 te :: (Integral n, Enum e) => n -> e
 te = toEnum . fromIntegral
 
-ts :: Ptr CChar -> CUInt -> IO ByteString
+ts :: Ptr CChar -> CUInt -> IO Text
 ts p l | nullPtr == p = return ""
-       | otherwise    = packCStringLen (p, fromIntegral l)
+       | otherwise    = T.pack <$> peekCStringLen (p, fromIntegral l)
 
-tb :: Ptr CChar -> IO ByteString
+tb :: Ptr CChar -> IO Text
 tb p | nullPtr == p = return ""
-     | otherwise    = packCString p
+     | otherwise    = T.pack <$> peekCString p
 
-fs :: ByteString -> IO CString
-fs s | B.null s    = return nullPtr
-     | otherwise = newCString $ unpack s
+fs :: Text -> IO CString
+fs s | T.null s    = return nullPtr
+     | otherwise = newCString $ T.unpack s
 
-fb :: ByteString -> IO CStringLen
-fb s | B.null s    = return (nullPtr,0)
-     | otherwise = newCStringLen $ unpack s
+fb :: Text -> IO CStringLen
+fb s | T.null s    = return (nullPtr,0)
+     | otherwise = newCStringLen $ T.unpack s
 
 data DpiException
   = ErrorInfoException Data_ErrorInfo
@@ -65,9 +64,9 @@ data DpiException
   | PoolConnectionCreateFailed 
   | PoolFetchFailed 
   | StatementCreateFailed
-  | ConnectionPropNotFound ByteString
+  | ConnectionPropNotFound Text
   | StatementExecuteFailed
-  | StatementFetchFailed
+  | StatementFetchFailed Text
   | StatementFetchRowFailed
   | StatementGetBatchErrorFailed
   | StatementGetBindFailed
@@ -78,12 +77,12 @@ data DpiException
 
 instance Exception DpiException
 
-_getConnValue :: (PtrConn -> Ptr (Ptr CChar) -> Ptr CUInt -> IO ByteString -> IO a) -> PtrConn -> IO a
+_getConnValue :: (PtrConn -> Ptr (Ptr CChar) -> Ptr CUInt -> IO Text -> IO a) -> PtrConn -> IO a
 _getConnValue f p
   = alloca $ \ps ->
     alloca $ \pslen -> f p ps pslen (join $ ts <$> peek ps <*> peek pslen)
 
-_getConn :: ByteString -> (PtrConn -> Ptr (Ptr CChar) -> Ptr CUInt -> IO CInt) -> PtrConn -> IO ByteString
+_getConn :: Text -> (PtrConn -> Ptr (Ptr CChar) -> Ptr CUInt -> IO CInt) -> PtrConn -> IO Text
 _getConn key f = _getConnValue $ go key f
   where
     go key f p ps pslen pstr = do
@@ -92,9 +91,9 @@ _getConn key f = _getConnValue $ go key f
 
 _getConnStrAndObj :: Storable a
                   => (PtrConn -> Ptr (Ptr CChar) -> Ptr CUInt -> Ptr a -> IO CInt)
-                  -> ByteString
+                  -> Text
                   -> PtrConn
-                  -> IO (ByteString, a)
+                  -> IO (Text, a)
 _getConnStrAndObj f key = _getConnValue (go key f)
   where
     go key f p ps pslen pstr = alloca $ \pv -> do
@@ -113,8 +112,8 @@ _get' e f v p
       if ok then v pc else throw e
 
 
-_getStmt :: Storable a => (PtrStmt -> Ptr a -> IO CInt) -> (Ptr a -> IO b) -> PtrStmt -> IO b
-_getStmt = _get' StatementFetchFailed
+_getStmt :: Storable a => Text -> (PtrStmt -> Ptr a -> IO CInt) -> (Ptr a -> IO b) -> PtrStmt -> IO b
+_getStmt c = _get' (StatementFetchFailed c)
 
 -- GetData
 _get :: NativeTypeNum -> PtrData -> IO DataValue
@@ -197,8 +196,8 @@ type PtrContext    = Ptr DPI_Context
 {#pointer *Timestamp  as Ptr_Timestamp  -> Data_Timestamp  #}
 
 data Data_Bytes = Data_Bytes
-  { bytes    :: ByteString
-  , encoding :: ByteString
+  { bytes    :: Text
+  , encoding :: Text
   } deriving Show
 
 instance Storable Data_Bytes where
@@ -296,9 +295,9 @@ instance Storable Data_Timestamp where
 {#pointer *VersionInfo        as PtrVersionInfo        -> Data_VersionInfo        #}
 
 data Data_AppContext  = Data_AppContext
-  { namespaceName       :: ByteString
-  , name                :: ByteString
-  , value               :: ByteString
+  { namespaceName       :: Text
+  , name                :: Text
+  , value               :: Text
   } deriving Show
 
 instance Storable Data_AppContext where
@@ -319,10 +318,10 @@ instance Storable Data_AppContext where
 
 data Data_CommonCreateParams  = Data_CommonCreateParams
   { createMode       :: CreateMode
-  , encoding         :: ByteString
-  , nencoding        :: ByteString
-  , edition          :: ByteString
-  , driverName       :: ByteString
+  , encoding         :: Text
+  , nencoding        :: Text
+  , edition          :: Text
+  , driverName       :: Text
   } deriving Show
 
 instance Storable Data_CommonCreateParams where
@@ -354,17 +353,17 @@ instance Storable Data_CommonCreateParams where
 
 data Data_ConnCreateParams  = Data_ConnCreateParams
   { authMode                   :: AuthMode
-  , connectionClass            :: ByteString
+  , connectionClass            :: Text
   , purity                     :: Purity
-  , newPassword                :: ByteString
+  , newPassword                :: Text
   , appContext                 :: PtrAppContext
   , numAppContext              :: CUInt
   , externalAuth               :: CInt
   , externalHandle             :: Ptr ()
   , pool                       :: PtrPool
-  , tag                        :: ByteString
+  , tag                        :: Text
   , matchAnyTag                :: CInt
-  , outTag                     :: ByteString
+  , outTag                     :: Text
   , outTagFound                :: CInt
   , shardingKeyColumns         :: PtrShardingKeyColumn
   , numShardingKeyColumns      :: CUChar
@@ -564,9 +563,9 @@ instance Storable Data_DataTypeInfo where
 
 
 data Data_EncodingInfo  = Data_EncodingInfo
-  { encoding              :: ByteString
+  { encoding              :: Text
   , maxBytesPerCharacter  :: CInt
-  , nencoding             :: ByteString
+  , nencoding             :: Text
   , nmaxBytesPerCharacter :: CInt
   } deriving Show
 
@@ -584,11 +583,11 @@ instance Storable Data_EncodingInfo where
 data Data_ErrorInfo  = Data_ErrorInfo
   { code          :: CInt
   , offset        :: CUShort
-  , message       :: ByteString
-  , encoding      :: ByteString
-  , fnName        :: ByteString
-  , action        :: ByteString
-  , sqlState      :: ByteString
+  , message       :: Text
+  , encoding      :: Text
+  , fnName        :: Text
+  , action        :: Text
+  , sqlState      :: Text
   , isRecoverable :: Bool
   } deriving Show
 
@@ -610,7 +609,7 @@ instance Storable Data_ErrorInfo where
     return Data_ErrorInfo {..}
 
 data Data_ObjectAttrInfo  = Data_ObjectAttrInfo
-  { name       :: ByteString
+  { name       :: Text
   , typeInfo   :: Data_DataTypeInfo
   } deriving Show
 
@@ -637,8 +636,8 @@ instance Storable Data_ObjectAttrInfo where
     return Data_ObjectAttrInfo {..}
 
 data Data_ObjectTypeInfo  = Data_ObjectTypeInfo
-  { schema          :: ByteString
-  , name            :: ByteString
+  { schema          :: Text
+  , name            :: Text
   , isCollection    :: Bool
   , elementTypeInfo :: Data_DataTypeInfo
   , numAttributes   :: CUShort
@@ -680,7 +679,7 @@ data Data_PoolCreateParams  = Data_PoolCreateParams
   , homogeneous       :: CInt
   , externalAuth      :: CInt
   , getMode           :: PoolGetMode
-  , outPoolName       :: ByteString
+  , outPoolName       :: Text
   } deriving Show
 
 instance Storable Data_PoolCreateParams where
@@ -713,7 +712,7 @@ instance Storable Data_PoolCreateParams where
     return Data_PoolCreateParams {..}
 
 data Data_QueryInfo = Data_QueryInfo
-  { name       :: ByteString
+  { name       :: Text
   , typeInfo   :: Data_DataTypeInfo
   , nullOk     :: Bool
   } deriving Show
@@ -824,10 +823,10 @@ data Data_SubscrCreateParams = Data_SubscrCreateParams
   , operations          :: CInt
   , portNumber          :: CUInt
   , timeout             :: CUInt
-  , name                :: ByteString
+  , name                :: Text
   , callback            :: FunPtr (Ptr () -> PtrSubscrMessage -> IO ())
   , callbackContext     :: Ptr ()
-  , recipientName       :: ByteString
+  , recipientName       :: Text
   } deriving Show
 
 instance Storable Data_SubscrCreateParams where
@@ -853,7 +852,7 @@ instance Storable Data_SubscrCreateParams where
 
 data Data_SubscrMessage = Data_SubscrMessage
   { eventType    :: EventType
-  , dbName       :: ByteString
+  , dbName       :: Text
   , tables       :: PtrSubscrMessageTable
   , numTables    :: CUInt
   , queries      :: PtrSubscrMessageQuery
@@ -901,7 +900,7 @@ instance Storable Data_SubscrMessageQuery where
 
 data Data_SubscrMessageRow = Data_SubscrMessageRow
   { operation   :: OpCode
-  , rowid       :: ByteString
+  , rowid       :: Text
   } deriving Show
 
 instance Storable Data_SubscrMessageRow where
@@ -917,7 +916,7 @@ instance Storable Data_SubscrMessageRow where
 
 data Data_SubscrMessageTable = Data_SubscrMessageTable
   { operation  :: OpCode
-  , name       :: ByteString
+  , name       :: Text
   , rows       :: PtrSubscrMessageRow
   , numRows    :: CUInt
   } deriving Show
