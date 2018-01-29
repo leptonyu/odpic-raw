@@ -296,8 +296,8 @@ instance Storable Data_ConnCreateParams where
 
 data DataValue
   = DataNull       NativeTypeNum
-  | DataInt64      CLLong
-  | DataUint64     CULLong
+  | DataInt64      Int64
+  | DataUint64     Word64
   | DataFloat      CFloat
   | DataDouble     CDouble
   | DataBytes      Data_Bytes
@@ -343,8 +343,8 @@ instance Storable Data where
     go p d
     where
       go p (DataNull       _) = {#set Data -> isNull             #} p 1
-      go p (DataInt64      v) = {#set Data -> value.asInt64      #} p v
-      go p (DataUint64     v) = {#set Data -> value.asUint64     #} p v
+      go p (DataInt64      v) = {#set Data -> value.asInt64      #} p (fromIntegral v)
+      go p (DataUint64     v) = {#set Data -> value.asUint64     #} p (fromIntegral v)
       go p (DataFloat      v) = {#set Data -> value.asFloat      #} p v
       go p (DataDouble     v) = {#set Data -> value.asDouble     #} p v
       go p (DataBytes      (Data_Bytes {..})) = do
@@ -384,8 +384,8 @@ instance Storable Data where
         if isNull 
           then return $ DataNull t
           else go p t
-      go p NativeTypeInt64      = DataInt64      <$> {#get Data -> value.asInt64      #} p
-      go p NativeTypeUint64     = DataUint64     <$> {#get Data -> value.asUint64     #} p
+      go p NativeTypeInt64      = (DataInt64  .fromInteger.toInteger) <$> {#get Data -> value.asInt64      #} p
+      go p NativeTypeUint64     = (DataUint64 .fromInteger.toInteger) <$> {#get Data -> value.asUint64     #} p
       go p NativeTypeFloat      = DataFloat      <$> {#get Data -> value.asFloat      #} p
       go p NativeTypeDouble     = DataDouble     <$> {#get Data -> value.asDouble     #} p
       go p NativeTypeBytes      = DataBytes      <$> do
@@ -647,8 +647,8 @@ instance Storable Data_ShardingKeyColumn where
     value         <- go p nativeTypeNum
     return Data_ShardingKeyColumn {..}
     where
-      go p NativeTypeInt64      = DataInt64      <$> {#get ShardingKeyColumn -> value.asInt64      #} p
-      go p NativeTypeUint64     = DataUint64     <$> {#get ShardingKeyColumn -> value.asUint64     #} p
+      go p NativeTypeInt64      = (DataInt64  .fromInteger.toInteger) <$> {#get ShardingKeyColumn -> value.asInt64      #} p
+      go p NativeTypeUint64     = (DataUint64 .fromInteger.toInteger) <$> {#get ShardingKeyColumn -> value.asUint64     #} p
       go p NativeTypeFloat      = DataFloat      <$> {#get ShardingKeyColumn -> value.asFloat      #} p
       go p NativeTypeDouble     = DataDouble     <$> {#get ShardingKeyColumn -> value.asDouble     #} p
       go p NativeTypeBytes      = DataBytes      <$> do
@@ -772,7 +772,7 @@ instance Storable Data_SubscrMessage where
     return Data_SubscrMessage {..}
 
 data Data_SubscrMessageQuery = Data_SubscrMessageQuery
-  { mid       :: CULLong
+  { mid       :: Int64
   , operation :: OpCode
   , tables    :: PtrSubscrMessageTable
   , numTables :: CUInt
@@ -783,7 +783,7 @@ instance Storable Data_SubscrMessageQuery where
   alignment _ = {#alignof SubscrMessageQuery #}
   poke      _ = noImplement
   peek      p = do
-    mid       <- {#get SubscrMessageQuery -> id        #} p
+    mid       <- fromInteger.toInteger <$> {#get SubscrMessageQuery -> id        #} p
     operation <- te <$> {#get SubscrMessageQuery -> operation #} p
     tables    <- {#get SubscrMessageQuery -> tables    #} p
     numTables <- {#get SubscrMessageQuery -> numTables #} p
