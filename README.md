@@ -18,6 +18,12 @@ Install:
 stack install odpic-raw
 ```
 
+Use environment [`DPI_DEBUG_LEVEL`](https://oracle.github.io/odpi/doc/user_guide/debugging.html) to set DPI debug level, for`createStatement` cannot show detail reason for what is wrong.
+
+For non-english user, please set environment  `NLS_LANG` to specify the oracle db encodings. use following sql to get the value.
+```SQL
+SELECT USERENV ('language') FROM DUAL
+```
 
 Test:
 
