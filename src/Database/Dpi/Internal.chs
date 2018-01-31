@@ -65,19 +65,20 @@ success = {#const DPI_SUCCESS #}
 
 {#pointer *Context    as DPI_Context    foreign newtype #}
 
-type PtrConn       = Ptr DPI_Conn
-type PtrPool       = Ptr DPI_Pool
-type PtrStmt       = Ptr DPI_Stmt
-type PtrVar        = Ptr DPI_Var
-type PtrLob        = Ptr DPI_Lob
-type PtrObject     = Ptr DPI_Object
-type PtrObjectAttr = Ptr DPI_ObjectAttr
-type PtrObjectType = Ptr DPI_ObjectType
-type PtrRowid      = Ptr DPI_Rowid
-type PtrSubscr     = Ptr DPI_Subscr
-type PtrDeqOptions = Ptr DPI_DeqOptions
-type PtrEnqOptions = Ptr DPI_EnqOptions
-type PtrMsgProps   = Ptr DPI_MsgProps
+type HasCxtPtr a   = (PtrContext, Ptr a) 
+type PtrConn       = HasCxtPtr DPI_Conn
+type PtrPool       = HasCxtPtr DPI_Pool
+type PtrStmt       = HasCxtPtr DPI_Stmt
+type PtrVar        = HasCxtPtr DPI_Var
+type PtrLob        = HasCxtPtr DPI_Lob
+type PtrObject     = HasCxtPtr DPI_Object
+type PtrObjectAttr = HasCxtPtr DPI_ObjectAttr
+type PtrObjectType = HasCxtPtr DPI_ObjectType
+type PtrRowid      = HasCxtPtr DPI_Rowid
+type PtrSubscr     = HasCxtPtr DPI_Subscr
+type PtrDeqOptions = HasCxtPtr DPI_DeqOptions
+type PtrEnqOptions = HasCxtPtr DPI_EnqOptions
+type PtrMsgProps   = HasCxtPtr DPI_MsgProps
 type PtrContext    = Ptr DPI_Context
 
 --        Inner               Data
@@ -87,7 +88,7 @@ type PtrContext    = Ptr DPI_Context
 {#pointer *Timestamp  as Ptr_Timestamp  -> Data_Timestamp  #}
 
 data Data_Bytes = Data_Bytes
-  { bytes    :: Text
+  { bytes    :: CStringLen
   , encoding :: Text
   } deriving Show
 
@@ -99,15 +100,15 @@ instance Storable Data_Bytes where
     ptr      <- {#get Bytes -> ptr      #} p
     length   <- {#get Bytes -> length   #} p
     encoding <- {#get Bytes -> encoding #} p >>= tb
-    bytes    <- ts ptr length
+    let bytes = (ptr, fromIntegral length)
     return Data_Bytes {..}
 
 data Data_IntervalDS = Data_IntervalDS
-  { days     :: CInt
-  , hours    :: CInt
-  , minutes  :: CInt
-  , seconds  :: CInt
-  , fseconds :: CInt
+  { days     :: !CInt
+  , hours    :: !CInt
+  , minutes  :: !CInt
+  , seconds  :: !CInt
+  , fseconds :: !CInt
   } deriving Show
 
 instance Storable Data_IntervalDS where
@@ -123,8 +124,8 @@ instance Storable Data_IntervalDS where
     return Data_IntervalDS {..}
 
 data Data_IntervalYM = Data_IntervalYM
-  { years    :: CInt
-  , months   :: CInt
+  { years    :: !CInt
+  , months   :: !CInt
   } deriving Show
 
 instance Storable Data_IntervalYM where
@@ -186,9 +187,9 @@ instance Storable Data_Timestamp where
 {#pointer *VersionInfo        as PtrVersionInfo        -> Data_VersionInfo        #}
 
 data Data_AppContext  = Data_AppContext
-  { namespaceName       :: Text
-  , name                :: Text
-  , value               :: Text
+  { namespaceName       :: !Text
+  , name                :: !Text
+  , value               :: !Text
   } deriving Show
 
 instance Storable Data_AppContext where
@@ -208,11 +209,11 @@ instance Storable Data_AppContext where
     return Data_AppContext {..}
 
 data Data_CommonCreateParams  = Data_CommonCreateParams
-  { createMode       :: CreateMode
-  , encoding         :: Text
-  , nencoding        :: Text
-  , edition          :: Text
-  , driverName       :: Text
+  { createMode       :: !CreateMode
+  , encoding         :: !Text
+  , nencoding        :: !Text
+  , edition          :: !Text
+  , driverName       :: !Text
   } deriving Show
 
 instance Storable Data_CommonCreateParams where
@@ -243,29 +244,54 @@ instance Storable Data_CommonCreateParams where
     return Data_CommonCreateParams {..}
 
 data Data_ConnCreateParams  = Data_ConnCreateParams
-  { authMode                   :: AuthMode
-  , connectionClass            :: Text
-  , purity                     :: Purity
-  , newPassword                :: Text
-  , appContext                 :: PtrAppContext
-  , numAppContext              :: CUInt
-  , externalAuth               :: CInt
-  , externalHandle             :: Ptr ()
-  , pool                       :: PtrPool
-  , tag                        :: Text
-  , matchAnyTag                :: CInt
-  , outTag                     :: Text
-  , outTagFound                :: CInt
-  , shardingKeyColumns         :: PtrShardingKeyColumn
-  , numShardingKeyColumns      :: CUChar
-  , superShardingKeyColumns    :: PtrShardingKeyColumn
-  , numSuperShardingKeyColumns :: CUChar
+  { authMode                   :: !AuthMode
+  , connectionClass            :: !Text
+  , purity                     :: !Purity
+  , newPassword                :: !Text
+  , appContext                 :: !PtrAppContext
+  , numAppContext              :: !CUInt
+  , externalAuth               :: !CInt
+  , externalHandle             :: !(Ptr ())
+  , pool                       :: !(Ptr DPI_Pool)
+  , tag                        :: !Text
+  , matchAnyTag                :: !CInt
+  , outTag                     :: !Text
+  , outTagFound                :: !CInt
+  , shardingKeyColumns         :: !PtrShardingKeyColumn
+  , numShardingKeyColumns      :: !CUChar
+  , superShardingKeyColumns    :: !PtrShardingKeyColumn
+  , numSuperShardingKeyColumns :: !CUChar
   } deriving Show
 
 instance Storable Data_ConnCreateParams where
   sizeOf    _ = {#sizeof  ConnCreateParams #}
   alignment _ = {#alignof ConnCreateParams #}
-  poke      _ = noImplement
+  poke    p Data_ConnCreateParams{..} = do
+    (cc,cclen) <- fb connectionClass
+    (np,nplen) <- fb newPassword
+    (tg,tglen) <- fb tag
+    (og,oglen) <- fb outTag
+    {#set ConnCreateParams -> authMode                   #} p (fe authMode)                 
+    {#set ConnCreateParams -> connectionClass            #} p cc           
+    {#set ConnCreateParams -> connectionClassLength      #} p (fromIntegral cclen)     
+    {#set ConnCreateParams -> purity                     #} p (fe purity)                    
+    {#set ConnCreateParams -> newPassword                #} p np               
+    {#set ConnCreateParams -> newPasswordLength          #} p (fromIntegral nplen)         
+    {#set ConnCreateParams -> appContext                 #} p appContext                
+    {#set ConnCreateParams -> numAppContext              #} p numAppContext             
+    {#set ConnCreateParams -> externalAuth               #} p externalAuth              
+    {#set ConnCreateParams -> externalHandle             #} p externalHandle            
+    {#set ConnCreateParams -> pool                       #} p pool                      
+    {#set ConnCreateParams -> tag                        #} p tg                       
+    {#set ConnCreateParams -> tagLength                  #} p (fromIntegral tglen)                 
+    {#set ConnCreateParams -> matchAnyTag                #} p matchAnyTag               
+    {#set ConnCreateParams -> outTag                     #} p og                    
+    {#set ConnCreateParams -> outTagLength               #} p (fromIntegral oglen)              
+    {#set ConnCreateParams -> outTagFound                #} p outTagFound               
+    {#set ConnCreateParams -> shardingKeyColumns         #} p shardingKeyColumns        
+    {#set ConnCreateParams -> numShardingKeyColumns      #} p numShardingKeyColumns     
+    {#set ConnCreateParams -> superShardingKeyColumns    #} p superShardingKeyColumns   
+    {#set ConnCreateParams -> numSuperShardingKeyColumns #} p numSuperShardingKeyColumns
   peek      p = do
     authMode                   <- te <$> {#get ConnCreateParams -> authMode                   #} p
     connectionClass'           <- {#get ConnCreateParams -> connectionClass            #} p
@@ -295,20 +321,20 @@ instance Storable Data_ConnCreateParams where
     return Data_ConnCreateParams {..}
 
 data DataValue
-  = DataNull       NativeTypeNum
-  | DataInt64      Int64
-  | DataUint64     Word64
-  | DataFloat      CFloat
-  | DataDouble     CDouble
-  | DataBytes      Data_Bytes
-  | DataTimestamp  Data_Timestamp
-  | DataIntervalDs Data_IntervalDS
-  | DataIntervalYm Data_IntervalYM
-  | DataLob        PtrLob
-  | DataObject     PtrObject
-  | DataStmt       PtrStmt
-  | DataBoolean    Bool
-  | DataRowid      PtrRowid
+  = DataNull       !NativeTypeNum
+  | DataInt64      !Int64
+  | DataUint64     !Word64
+  | DataFloat      !CFloat
+  | DataDouble     !CDouble
+  | DataBytes      !Data_Bytes
+  | DataTimestamp  !Data_Timestamp
+  | DataIntervalDs !Data_IntervalDS
+  | DataIntervalYm !Data_IntervalYM
+  | DataLob        !(Ptr DPI_Lob)
+  | DataObject     !(Ptr DPI_Object)
+  | DataStmt       !(Ptr DPI_Stmt)
+  | DataBoolean    !Bool
+  | DataRowid      !(Ptr DPI_Rowid)
   deriving Show
 
 newData :: DataValue -> IO (NativeTypeNum, PtrData)
@@ -348,7 +374,7 @@ instance Storable Data where
       go p (DataFloat      v) = {#set Data -> value.asFloat      #} p v
       go p (DataDouble     v) = {#set Data -> value.asDouble     #} p v
       go p (DataBytes      (Data_Bytes {..})) = do
-        (b,bl) <- fb bytes
+        let (b,bl) = bytes
         e      <- fs encoding
         {#set Data -> value.asBytes.ptr      #} p b
         {#set Data -> value.asBytes.length   #} p (fromIntegral bl)
@@ -392,7 +418,7 @@ instance Storable Data where
         ptr      <- {#get Data -> value.asBytes.ptr      #} p
         length   <- {#get Data -> value.asBytes.length   #} p
         encoding <- {#get Data -> value.asBytes.encoding #} p >>= tb
-        bytes    <- ts ptr length
+        let bytes = (ptr, fromIntegral length)
         return Data_Bytes {..}
       go p NativeTypeTimestamp  = DataTimestamp  <$> do
         year           <- {#get Data -> value.asTimestamp.year           #} p
@@ -423,22 +449,22 @@ instance Storable Data where
       go p NativeTypeBoolean    = (DataBoolean .toBool)<$> {#get Data -> value.asBoolean    #} p
 
 data Data_DataTypeInfo  = Data_DataTypeInfo
-  { oracleTypeNum        :: OracleTypeNum
-  , defaultNativeTypeNum :: NativeTypeNum
-  , ociTypeCode          :: CUShort
-  , dbSizeInBytes        :: CUInt
-  , clientSizeInBytes    :: CUInt
-  , sizeInChars          :: CUInt
-  , precision            :: CShort
-  , scale                :: CSChar
-  , fsPrecision          :: CUChar
-  , objectType           :: PtrObjectType
+  { oracleTypeNum        :: !OracleTypeNum
+  , defaultNativeTypeNum :: !NativeTypeNum
+  , ociTypeCode          :: !CUShort
+  , dbSizeInBytes        :: !CUInt
+  , clientSizeInBytes    :: !CUInt
+  , sizeInChars          :: !CUInt
+  , precision            :: !CShort
+  , scale                :: !CSChar
+  , fsPrecision          :: !CUChar
+  , objectType           :: !(Ptr DPI_ObjectType)
   } deriving Show
 
 instance Storable Data_DataTypeInfo where
   sizeOf    _ = {#sizeof  DataTypeInfo #}
   alignment _ = {#alignof DataTypeInfo #}
-  poke      _ = noImplement
+  poke    _ _ = noImplement
   peek      p = do
     oracleTypeNum        <- te <$> {#get DataTypeInfo -> oracleTypeNum        #} p
     defaultNativeTypeNum <- te <$> {#get DataTypeInfo -> defaultNativeTypeNum #} p
@@ -454,16 +480,16 @@ instance Storable Data_DataTypeInfo where
 
 
 data Data_EncodingInfo  = Data_EncodingInfo
-  { encoding              :: Text
-  , maxBytesPerCharacter  :: CInt
-  , nencoding             :: Text
-  , nmaxBytesPerCharacter :: CInt
+  { encoding              :: !Text
+  , maxBytesPerCharacter  :: !CInt
+  , nencoding             :: !Text
+  , nmaxBytesPerCharacter :: !CInt
   } deriving Show
 
 instance Storable Data_EncodingInfo where
   sizeOf    _ = {#sizeof  EncodingInfo #}
   alignment _ = {#alignof EncodingInfo #}
-  poke      _ = noImplement
+  poke   _  _ = noImplement
   peek      p = do
     encoding              <- {#get EncodingInfo -> encoding              #} p >>= tb
     maxBytesPerCharacter  <- {#get EncodingInfo -> maxBytesPerCharacter  #} p
@@ -472,20 +498,20 @@ instance Storable Data_EncodingInfo where
     return Data_EncodingInfo {..}
 
 data Data_ErrorInfo  = Data_ErrorInfo
-  { code          :: CInt
-  , offset        :: CUShort
-  , message       :: Text
-  , encoding      :: Text
-  , fnName        :: Text
-  , action        :: Text
-  , sqlState      :: Text
-  , isRecoverable :: Bool
+  { code          :: !CInt
+  , offset        :: !CUShort
+  , message       :: !Text
+  , encoding      :: !Text
+  , fnName        :: !Text
+  , action        :: !Text
+  , sqlState      :: !Text
+  , isRecoverable :: !Bool
   } deriving Show
 
 instance Storable Data_ErrorInfo where
   sizeOf    _ = {#sizeof  ErrorInfo #}
   alignment _ = {#alignof ErrorInfo #}
-  poke      _ = noImplement
+  poke    _ _ = noImplement
   peek      p = do
     code          <- {#get ErrorInfo -> code          #} p
     offset        <- {#get ErrorInfo -> offset        #} p
@@ -507,7 +533,7 @@ data Data_ObjectAttrInfo  = Data_ObjectAttrInfo
 instance Storable Data_ObjectAttrInfo where
   sizeOf    _ = {#sizeof  ObjectAttrInfo #}
   alignment _ = {#alignof ObjectAttrInfo #}
-  poke      _ = noImplement
+  poke    _ _ = noImplement
   peek      p = do
     name'      <- {#get ObjectAttrInfo -> name       #} p
     nameLength <- {#get ObjectAttrInfo -> nameLength #} p
@@ -527,17 +553,17 @@ instance Storable Data_ObjectAttrInfo where
     return Data_ObjectAttrInfo {..}
 
 data Data_ObjectTypeInfo  = Data_ObjectTypeInfo
-  { schema          :: Text
-  , name            :: Text
-  , isCollection    :: Bool
-  , elementTypeInfo :: Data_DataTypeInfo
-  , numAttributes   :: CUShort
+  { schema          :: !Text
+  , name            :: !Text
+  , isCollection    :: !Bool
+  , elementTypeInfo :: !Data_DataTypeInfo
+  , numAttributes   :: !CUShort
   } deriving Show
 
 instance Storable Data_ObjectTypeInfo where
   sizeOf    _ = {#sizeof  ObjectAttrInfo #}
   alignment _ = {#alignof ObjectAttrInfo #}
-  poke      _ = noImplement
+  poke    _ _ = noImplement
   peek      p = do
     schema'         <- {#get ObjectTypeInfo -> schema          #} p
     schemaLength    <- {#get ObjectTypeInfo -> schemaLength    #} p
@@ -562,15 +588,15 @@ instance Storable Data_ObjectTypeInfo where
     return Data_ObjectTypeInfo {..}
 
 data Data_PoolCreateParams  = Data_PoolCreateParams
-  { minSessions       :: CUInt
-  , maxSessions       :: CUInt
-  , sessionIncrement  :: CUInt
-  , pingInterval      :: CInt
-  , pingTimeout       :: CInt
-  , homogeneous       :: CInt
-  , externalAuth      :: CInt
-  , getMode           :: PoolGetMode
-  , outPoolName       :: Text
+  { minSessions       :: !CUInt
+  , maxSessions       :: !CUInt
+  , sessionIncrement  :: !CUInt
+  , pingInterval      :: !CInt
+  , pingTimeout       :: !CInt
+  , homogeneous       :: !CInt
+  , externalAuth      :: !CInt
+  , getMode           :: !PoolGetMode
+  , outPoolName       :: !Text
   } deriving Show
 
 instance Storable Data_PoolCreateParams where
@@ -611,7 +637,7 @@ data Data_QueryInfo = Data_QueryInfo
 instance Storable Data_QueryInfo where
   sizeOf    _ = {#sizeof  QueryInfo #}
   alignment _ = {#alignof QueryInfo #}
-  poke      _ = noImplement
+  poke    _ _ = noImplement
   peek      p = do
     name'      <- {#get QueryInfo -> name       #} p
     nameLength <- {#get QueryInfo -> nameLength #} p
@@ -632,15 +658,15 @@ instance Storable Data_QueryInfo where
     return Data_QueryInfo {..}
 
 data Data_ShardingKeyColumn  = Data_ShardingKeyColumn
-  { oracleTypeNum :: OracleTypeNum
-  , nativeTypeNum :: NativeTypeNum
-  , value         :: DataValue
+  { oracleTypeNum :: !OracleTypeNum
+  , nativeTypeNum :: !NativeTypeNum
+  , value         :: !DataValue
   } deriving Show
 
 instance Storable Data_ShardingKeyColumn where
   sizeOf    _ = {#sizeof  ShardingKeyColumn #}
   alignment _ = {#alignof ShardingKeyColumn #}
-  poke      _ = noImplement
+  poke    _ _ = noImplement
   peek      p = do
     oracleTypeNum <- te      <$> {#get ShardingKeyColumn -> oracleTypeNum #} p
     nativeTypeNum <- te      <$> {#get ShardingKeyColumn -> nativeTypeNum #} p
@@ -655,7 +681,7 @@ instance Storable Data_ShardingKeyColumn where
         ptr      <- {#get ShardingKeyColumn -> value.asBytes.ptr      #} p
         length   <- {#get ShardingKeyColumn -> value.asBytes.length   #} p
         encoding <- {#get ShardingKeyColumn -> value.asBytes.encoding #} p >>= tb
-        bytes    <- ts ptr length
+        let bytes = (ptr, fromIntegral length)
         return Data_Bytes {..}
       go p NativeTypeTimestamp  = DataTimestamp  <$> do
         year           <- {#get ShardingKeyColumn -> value.asTimestamp.year           #} p
@@ -686,18 +712,18 @@ instance Storable Data_ShardingKeyColumn where
       go p NativeTypeBoolean    = (DataBoolean .toBool)<$> {#get ShardingKeyColumn -> value.asBoolean    #} p
 
 data Data_StmtInfo = Data_StmtInfo
-  { isQuery       :: Bool
-  , isPLSQL       :: Bool
-  , isDDL         :: Bool
-  , isDML         :: Bool
-  , statementType :: StatementType
-  , isReturning   :: Bool
+  { isQuery       :: !Bool
+  , isPLSQL       :: !Bool
+  , isDDL         :: !Bool
+  , isDML         :: !Bool
+  , statementType :: !StatementType
+  , isReturning   :: !Bool
   } deriving Show
 
 instance Storable Data_StmtInfo where
   sizeOf    _ = {#sizeof  StmtInfo #}
   alignment _ = {#alignof StmtInfo #}
-  poke      _ = noImplement
+  poke    _ _ = noImplement
   peek      p = do
     isQuery       <- toBool <$> {#get StmtInfo -> isQuery       #} p
     isPLSQL       <- toBool <$> {#get StmtInfo -> isPLSQL       #} p
@@ -708,22 +734,22 @@ instance Storable Data_StmtInfo where
     return Data_StmtInfo {..}
 
 data Data_SubscrCreateParams = Data_SubscrCreateParams
-  { subscrNamespace     :: SubscrNamespace
-  , protocol            :: SubscrProtocol
-  , qos                 :: SubscrQOS
-  , operations          :: CInt
-  , portNumber          :: CUInt
-  , timeout             :: CUInt
-  , name                :: Text
-  , callback            :: FunPtr (Ptr () -> PtrSubscrMessage -> IO ())
-  , callbackContext     :: Ptr ()
-  , recipientName       :: Text
+  { subscrNamespace     :: !SubscrNamespace
+  , protocol            :: !SubscrProtocol
+  , qos                 :: !SubscrQOS
+  , operations          :: !CInt
+  , portNumber          :: !CUInt
+  , timeout             :: !CUInt
+  , name                :: !Text
+  , callback            :: !(FunPtr (Ptr () -> PtrSubscrMessage -> IO ()))
+  , callbackContext     :: !(Ptr ())
+  , recipientName       :: !Text
   } deriving Show
 
 instance Storable Data_SubscrCreateParams where
   sizeOf    _ = {#sizeof  SubscrCreateParams #}
   alignment _ = {#alignof SubscrCreateParams #}
-  poke      _ = noImplement
+  poke   _  _ = noImplement
   peek      p = do
     subscrNamespace     <- te    <$>                {#get SubscrCreateParams  -> subscrNamespace #} p
     protocol            <- te    <$>                {#get SubscrCreateParams  -> protocol        #} p
@@ -742,21 +768,21 @@ instance Storable Data_SubscrCreateParams where
     return Data_SubscrCreateParams {..}
 
 data Data_SubscrMessage = Data_SubscrMessage
-  { eventType    :: EventType
-  , dbName       :: Text
-  , tables       :: PtrSubscrMessageTable
-  , numTables    :: CUInt
-  , queries      :: PtrSubscrMessageQuery
-  , numQueries   :: CUInt
-  , errorInfo    :: PtrErrorInfo
-  , txId         :: Ptr ()
-  , txIdLength   :: CUInt
+  { eventType    :: !EventType
+  , dbName       :: !Text
+  , tables       :: !PtrSubscrMessageTable
+  , numTables    :: !CUInt
+  , queries      :: !PtrSubscrMessageQuery
+  , numQueries   :: !CUInt
+  , errorInfo    :: !PtrErrorInfo
+  , txId         :: !(Ptr ())
+  , txIdLength   :: !CUInt
   } deriving Show
 
 instance Storable Data_SubscrMessage where
   sizeOf    _ = {#sizeof  SubscrMessage #}
   alignment _ = {#alignof SubscrMessage #}
-  poke      _ = noImplement
+  poke    _ _ = noImplement
   peek      p = do
     eventType    <- te <$> {#get SubscrMessage -> eventType    #} p
     dbName'      <- {#get SubscrMessage -> dbName       #} p
@@ -772,16 +798,16 @@ instance Storable Data_SubscrMessage where
     return Data_SubscrMessage {..}
 
 data Data_SubscrMessageQuery = Data_SubscrMessageQuery
-  { mid       :: Int64
-  , operation :: OpCode
-  , tables    :: PtrSubscrMessageTable
-  , numTables :: CUInt
+  { mid       :: !Int64
+  , operation :: !OpCode
+  , tables    :: !PtrSubscrMessageTable
+  , numTables :: !CUInt
   } deriving Show
 
 instance Storable Data_SubscrMessageQuery where
   sizeOf    _ = {#sizeof  SubscrMessageQuery #}
   alignment _ = {#alignof SubscrMessageQuery #}
-  poke      _ = noImplement
+  poke    _ _ = noImplement
   peek      p = do
     mid       <- fromInteger.toInteger <$> {#get SubscrMessageQuery -> id        #} p
     operation <- te <$> {#get SubscrMessageQuery -> operation #} p
@@ -790,14 +816,14 @@ instance Storable Data_SubscrMessageQuery where
     return Data_SubscrMessageQuery {..}
 
 data Data_SubscrMessageRow = Data_SubscrMessageRow
-  { operation   :: OpCode
-  , rowid       :: Text
+  { operation   :: !OpCode
+  , rowid       :: !Text
   } deriving Show
 
 instance Storable Data_SubscrMessageRow where
   sizeOf    _ = {#sizeof  SubscrMessageRow #}
   alignment _ = {#alignof SubscrMessageRow #}
-  poke      _ = noImplement
+  poke    _ _ = noImplement
   peek      p = do
     operation   <- te <$> {#get SubscrMessageRow -> operation  #} p
     rowid'      <- {#get SubscrMessageRow -> rowid       #} p
@@ -806,16 +832,16 @@ instance Storable Data_SubscrMessageRow where
     return Data_SubscrMessageRow {..}
 
 data Data_SubscrMessageTable = Data_SubscrMessageTable
-  { operation  :: OpCode
-  , name       :: Text
-  , rows       :: PtrSubscrMessageRow
-  , numRows    :: CUInt
+  { operation  :: !OpCode
+  , name       :: !Text
+  , rows       :: !PtrSubscrMessageRow
+  , numRows    :: !CUInt
   } deriving Show
 
 instance Storable Data_SubscrMessageTable where
   sizeOf    _ = {#sizeof  SubscrMessageTable #}
   alignment _ = {#alignof SubscrMessageTable #}
-  poke      _ = noImplement
+  poke    _ _ = noImplement
   peek      p = do
     operation  <- te <$> {#get SubscrMessageTable -> operation  #} p
     name'      <- {#get SubscrMessageTable -> name       #} p
@@ -826,18 +852,18 @@ instance Storable Data_SubscrMessageTable where
     return Data_SubscrMessageTable {..}
 
 data Data_VersionInfo = Data_VersionInfo
-  { versionNum     :: CInt
-  , releaseNum     :: CInt
-  , updateNum      :: CInt
-  , portReleaseNum :: CInt
-  , portUpdateNum  :: CInt
-  , fullVersionNum :: CUInt
+  { versionNum     :: !CInt
+  , releaseNum     :: !CInt
+  , updateNum      :: !CInt
+  , portReleaseNum :: !CInt
+  , portUpdateNum  :: !CInt
+  , fullVersionNum :: !CUInt
   } deriving Show
 
 instance Storable Data_VersionInfo where
   sizeOf    _ = {#sizeof  VersionInfo #}
   alignment _ = {#alignof VersionInfo #}
-  poke      _ = noImplement
+  poke    _ _ = noImplement
   peek      p = do
     versionNum     <- {#get VersionInfo -> versionNum     #} p
     releaseNum     <- {#get VersionInfo -> releaseNum     #} p

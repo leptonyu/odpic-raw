@@ -1,5 +1,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE TupleSections         #-}
 {-|
 
 Module:      Database.Dpi
@@ -95,6 +97,7 @@ module Database.Dpi
   , PtrSubscrMessageRow
   , PtrSubscrMessageTable
   , PtrVersionInfo
+  , getContextError
   ) where
 
 import           Database.Dpi.Internal
@@ -102,6 +105,7 @@ import           Database.Dpi.Prelude
 import           Database.Dpi.Util
 
 import           Control.Exception
+import           Data.Maybe            (fromMaybe)
 import qualified Data.Text             as T
 
 -- * Context Interface
@@ -117,13 +121,16 @@ import qualified Data.Text             as T
 -- This is the first function that must be called and it must have completed successfully
 -- before any other functions can be called, including in other threads.
 createContext :: IO PtrContext
-createContext = libContextCreate & inInt majorVersion & inInt minorVersion & uncurry & outPtrs go
+createContext = libContextCreate & inInt majorVersion & inInt minorVersion & go
   where
-    go (pc,pe) i = if isOk i then peek pc else peek pe >>= throw . ErrorInfoException
+    go :: (Ptr PtrContext -> PtrErrorInfo -> IO CInt) -> IO PtrContext
+    go f = withPtrs $ \(pc,pe) -> do
+      i <- f pc pe
+      if isOk i then peek pc else peek pe >>= throw . ErrorInfoException
 
 -- | Destroys the context that was earlier created with the function 'createContext'.
 destroyContext :: PtrContext -> IO Bool
-destroyContext = runOk libContextDestroy
+destroyContext p = runBool libContextDestroy (p, p)
 
 -- | With Context, 'PtrContext' will be destroyed after run
 withContext :: (PtrContext -> IO a) -> IO a
@@ -133,20 +140,8 @@ withContext = bracket createContext destroyContext
 
 -- | Return information about the version of the Oracle Client that is being used.
 getClientVersion :: PtrContext -> IO Data_VersionInfo
-getClientVersion p = libContextGetClientVersion p & outPtrs (go p)
-  where
-    go p pc i = if isOk i then peek pc else throwContextError p
+getClientVersion p = libContextGetClientVersion p & outValue p peek
 
--- | Returns error information for the last error that was raised by the library.
--- This function must be called with the same thread that generated the error.
---  It must also be called before any other ODPI-C library calls are made on
--- the calling thread since the error information specific to that thread is cleared
---  at the start of every ODPI-C function call.
-getContextError :: PtrContext -> IO Data_ErrorInfo
-getContextError p = alloca $ \pe -> libContextGetError p pe >> peek pe
-
-throwContextError :: PtrContext -> IO a
-throwContextError p = getContextError p >>= throw . ErrorInfoException
 
 -- * Connection Interface
 -- $connection
@@ -163,40 +158,39 @@ createConnection :: PtrContext -- ^ Context
                  -> Text -- ^  the password to use for authenticating the user
                  -> Text -- ^ he connect string identifying the database to which a connection is to be established
                  -> (Data_CommonCreateParams -> Data_CommonCreateParams) -- ^ custom 'Data_CommonCreateParams'
+                 -> (Data_ConnCreateParams   -> Data_ConnCreateParams) -- ^ custom 'Data_ConnCreateParams'
                  -> IO PtrConn
-createConnection cxt username password connstr hcmp
+createConnection cxt username password connstr hcmp hccp
   = libConnCreate cxt
     & inStrLen username
     & inStrLen password
     & inStrLen connstr
     & inPtr (\c -> libContextInitCommonCreateParams cxt c >> peek c >>= poke c . hcmp)
-    & inPtr (libContextInitConnCreateParams   cxt)
-    & outPtrs (go cxt)
-    where
-      go p pc i = if isOk i then peek pc else throwContextError p
+    & inPtr (\c -> libContextInitConnCreateParams   cxt c >> peek c >>= poke c . hccp)
+    & outValue cxt (peekWithCxt cxt)
 
 -- | Closes the connection and makes it unusable for further activity. close connection, but not release resource, plese use 'releaseConnection' to release and close connection
 closeConnection :: ConnCloseMode -> PtrConn -> IO Bool
-closeConnection mode p = isOk <$> libConnClose p (fe mode) nullPtr 0
+closeConnection mode p = isOk <$> libConnClose (snd p) (fe mode) nullPtr 0
 
 -- | Releases a reference to the connection. A count of the references to the connection is maintained
 -- and when this count reaches zero, the memory associated with the connection is freed and
 -- the connection is closed or released back to the session pool if that has not already taken place
 --  using the function 'closeConnection'.
 releaseConnection :: PtrConn -> IO Bool
-releaseConnection = runOk libConnRelease
+releaseConnection = runBool libConnRelease
 
 -- | commit
 commitConnection :: PtrConn -> IO Bool
-commitConnection = runOk libConnCommit
+commitConnection = runBool libConnCommit
 
 -- | rollback
 rollbackConnection :: PtrConn -> IO Bool
-rollbackConnection = runOk libConnRollback
+rollbackConnection = runBool libConnRollback
 
 -- | Pings the database to verify that the connection is still alive.
 pingConnection :: PtrConn -> IO Bool
-pingConnection = runOk libConnPing
+pingConnection = runBool libConnPing
 
 -- | with connection
 withConnection
@@ -210,7 +204,7 @@ withConnection
   -> IO a
 withConnection p username password connstr lang nchar
   = bracket
-      (createConnection p username password connstr (set lang nchar))
+      (createConnection p username password connstr (set lang nchar) id)
       (\c -> closeConnection ModeConnCloseDefault c `finally` releaseConnection c)
   where
     set l n v = v { encoding = l, nencoding = n} :: Data_CommonCreateParams
@@ -225,57 +219,134 @@ beginTransaction
   -> Text -- ^ branchId
   -> IO Bool
 beginTransaction p formatId transId branchId
-  = libConnBeginDistribTrans p (fromIntegral formatId)
+  = libConnBeginDistribTrans (snd p) (fromIntegral formatId)
     & inStrLen transId
     & inStrLen branchId
-    & fmap isOk
+    & outBool
 
 -- | Prepares a distributed transaction for commit.
 -- This function should only be called after 'beginTransaction' is called and before 'commitConnection' is called.
 prepareTransaction :: PtrConn -> IO Bool
-prepareTransaction p = libConnPrepareDistribTrans p & outPtrs (checkOk "prepareTransaction" peekBool)
+prepareTransaction (cxt,p) = libConnPrepareDistribTrans p & outValue cxt peekBool
 
 -- ** Information from Connection
 
 getCurrentSchema :: PtrConn -> IO Text
-getCurrentSchema = _getConn "getCurrentSchema" libConnGetCurrentSchema
+getCurrentSchema = runText libConnGetCurrentSchema
 
 setCurrentSchema :: PtrConn -> Text -> IO Bool
-setCurrentSchema p s = withCStringLen (T.unpack s) $ \(c,clen) -> isOk <$> libConnSetCurrentSchema p  c (fromIntegral clen)
+setCurrentSchema = setText libConnSetCurrentSchema
 
 getEdition :: PtrConn -> IO Text
-getEdition = _getConn "edition" libConnGetEdition
+getEdition = runText libConnGetEdition
 
 getExternalName :: PtrConn -> IO Text
-getExternalName = _getConn "externalName" libConnGetExternalName
+getExternalName = runText libConnGetExternalName
+
+setExternalName :: PtrConn -> Text -> IO Bool
+setExternalName = setText libConnSetExternalName
 
 getInternalName :: PtrConn -> IO Text
-getInternalName = _getConn "internalName" libConnGetInternalName
+getInternalName = runText libConnGetInternalName
+
+setInternalName :: PtrConn -> Text -> IO Bool
+setInternalName = setText libConnSetInternalName
 
 getLTXID :: PtrConn -> IO Text
-getLTXID = _getConn "LTXID" libConnGetLTXID
+getLTXID = runText libConnGetLTXID
 
 getServerVersion :: PtrConn -> IO (Text, Data_VersionInfo)
-getServerVersion = _getConnStrAndObj libConnGetServerVersion "serverVersion"
+getServerVersion (cxt,p) = libConnGetServerVersion p & out3Value cxt go
+  where
+    go (pl,pv) = (,) <$> peekCStrLen pl <*> peek pv
 
 getObjectType :: PtrConn -> Text -> IO PtrObjectType
-getObjectType p name
-  = alloca $ \pot ->
-    withCStringLen (T.unpack name) $ \(n,nlen) -> do
-      ok <- isOk <$> libConnGetObjectType p n (fromIntegral nlen)  pot
-      if ok then peek pot else throw $ ConnectionPropNotFound $ "objectType_" <> name
+getObjectType (cxt,p) name
+  = libConnGetObjectType p
+    & inStrLen name
+    & outValue cxt (peekWithCxt cxt)
 
 getEncodingInfo :: PtrConn -> IO Data_EncodingInfo
-getEncodingInfo p
-  = alloca $ \pei -> do
-      ok <- isOk <$> libConnGetEncodingInfo p pei
-      if ok then peek pei else throw $ ConnectionPropNotFound "encodingInfo"
+getEncodingInfo = runVar libConnGetEncodingInfo
 
 getStmtCacheSize :: PtrConn -> IO Int
-getStmtCacheSize p
-  = alloca $ \pc -> do
-      ok <- isOk <$> libConnGetStmtCacheSize p pc
-      if ok then fromIntegral <$> peek pc else throw $ ConnectionPropNotFound "stmtCacheSize"
+getStmtCacheSize = runInt libConnGetStmtCacheSize
+
+setStmtCacheSize :: PtrConn -> Int -> IO Bool
+setStmtCacheSize (cxt,p) size = libConnSetStmtCacheSize p & inInt size & outBool
+
+setClientInfo :: PtrConn -> Text -> IO Bool
+setClientInfo = setText libConnSetClientInfo
+
+setClientIdentifier :: PtrConn -> Text -> IO Bool
+setClientIdentifier = setText libConnSetClientIdentifier
+
+setAction :: PtrConn -> Text -> IO Bool
+setAction = setText libConnSetAction
+
+setDbOp :: PtrConn -> Text -> IO Bool
+setDbOp = setText libConnSetDbOp
+
+setConnMode :: PtrConn -> Text -> IO Bool
+setConnMode = setText libConnSetModule
+
+getHandler :: PtrConn -> IO (Ptr ())
+getHandler = runVar libConnGetHandle
+
+-- ** Connection Management
+
+
+connectionAddRef :: PtrConn -> IO Bool
+connectionAddRef = runBool libConnAddRef
+
+breakException :: PtrConn -> IO Bool
+breakException = runBool libConnBreakExecution
+
+changePassword
+  :: PtrConn -- ^ Connection
+  -> Text    -- ^ the name of the user whose password is to be changed
+  -> Text    -- ^ the old password of the user whose password is to be changed
+  -> Text    -- ^  the new password of the user whose password is to be changed
+  -> IO Bool
+changePassword (cxt,p) username oldPassword newPassword
+  = libConnChangePassword p
+    & inStrLen username
+    & inStrLen oldPassword
+    & inStrLen newPassword
+    & outBool
+
+shutdownDatabase :: PtrConn -> ShutdownMode -> IO Bool
+shutdownDatabase (cxt,p) sm = libConnShutdownDatabase p & inEnum sm & outBool
+
+startupDatabase :: PtrConn -> StartupMode -> IO Bool
+startupDatabase (cxt,p) sm = libConnStartupDatabase p & inEnum sm & outBool
+
+
+-- Data Interface
+-- libDataGetBool
+-- libDataGetBytes
+-- libDataGetDouble
+-- libDataGetFloat
+-- libDataGetInt
+-- libDataGetIntervalDS
+-- libDataGetIntervalYM
+-- libDataGetLOB
+-- libDataGetObject
+-- libDataGetStmt
+-- libDataGetTimestamp
+-- libDataGetUint
+-- libDataSetBool
+-- libDataSetBytes
+-- libDataSetDouble
+-- libDataSetFloat
+-- libDataSetInt
+-- libDataSetIntervalDS
+-- libDataSetIntervalYM
+-- libDataSetLOB
+-- libDataSetObject
+-- libDataSetStmt
+-- libDataSetTimestamp
+-- libDataSetUint
 
 -- * ConnectionPool Interace
 -- $pool
@@ -286,11 +357,10 @@ getStmtCacheSize p
 
 -- | Acquires a connection from the pool and returns a reference to it. This reference should be released as soon as it is no longer needed.
 acquiredConnection :: PtrPool -> IO PtrConn
-acquiredConnection
-  = _get' (DpiException "acquiredConnection") (\p -> libPoolAcquireConnection p nullPtr 0 nullPtr 0 nullPtr) peek
+acquiredConnection (cxt,p) = libPoolAcquireConnection p nullPtr 0 nullPtr 0 nullPtr & outValue cxt (peekWithCxt cxt)
 
 poolAddRef :: PtrPool -> IO Bool
-poolAddRef = runOk libPoolAddRef
+poolAddRef = runBool libPoolAddRef
 
 -- | Creates a session pool which creates and maintains a group of stateless sessions to the database.
 --  The main benefit of session pooling is performance since making a connection to the database is a time-consuming activity,
@@ -304,29 +374,23 @@ createPool
   -> (Data_PoolCreateParams -> Data_PoolCreateParams)
   -> IO PtrPool
 createPool cxt username password connstr hcmp hpcp
-  = alloca $ \pc   ->
-    alloca $ \pcmp ->
-    alloca $ \pcop ->
-    withCStringLen (T.unpack username) $ \(u,ulen) ->
-    withCStringLen (T.unpack password) $ \(p,plen) ->
-    withCStringLen (T.unpack connstr)  $ \(c,clen) -> do
-      libContextInitCommonCreateParams cxt pcmp
-      libContextInitPoolCreateParams   cxt pcop
-      peek pcmp >>= poke pcmp . hcmp
-      v <- peek pcop
-      poke pcop $ hpcp v {getMode = ModePoolGetWait}
-      ok <- isOk <$> libPoolCreate cxt u (fromIntegral ulen) p (fromIntegral plen) c (fromIntegral clen) pcmp pcop pc
-      if ok then peek pc else throwContextError cxt
+  = libPoolCreate cxt
+    & inStrLen username
+    & inStrLen password
+    & inStrLen connstr
+    & inPtr (\c -> libContextInitCommonCreateParams cxt c >> peek c >>= poke c . hcmp)
+    & inPtr (\c -> libContextInitPoolCreateParams   cxt c >> peek c >>= poke c . hpcp)
+    & outValue cxt (peekWithCxt cxt)
 
 -- | Closes the pool and makes it unusable for further activity.
 closePool :: PtrPool -> PoolCloseMode -> IO Bool
-closePool p mode = isOk <$> libPoolClose p (fe mode)
+closePool (cxt,p) mode = libPoolClose p & inEnum mode & outBool
 
 -- | Releases a reference to the pool. A count of the references to the pool is maintained
 -- and when this count reaches zero, the memory associated with the pool is freed
 -- and the session pool is closed if that has not already taken place using the function 'closePool'.
 releasePool :: PtrPool -> IO Bool
-releasePool = runOk libPoolRelease
+releasePool = runBool libPoolRelease
 
 -- | with pool
 withPool
@@ -352,38 +416,46 @@ withPoolConnection :: PtrPool -> (PtrConn -> IO a) -> IO a
 withPoolConnection p = bracket (acquiredConnection p) releaseConnection
 
 getPoolBusyCount :: PtrPool -> IO Int
-getPoolBusyCount = _get' (DpiException "getPoolBusyCount") libPoolGetBusyCount peekInt
+getPoolBusyCount = runInt libPoolGetBusyCount
 
 getPoolEncodingInfo :: PtrPool -> IO Data_EncodingInfo
-getPoolEncodingInfo = _get' (DpiException "getPoolEncodingInfo") libPoolGetEncodingInfo peek
+getPoolEncodingInfo = runVar libPoolGetEncodingInfo
 
 getPoolMode :: PtrPool -> IO PoolGetMode
-getPoolMode = _get' (DpiException "getPoolMode") libPoolGetGetMode (\p -> te <$> peek p)
+getPoolMode (cxt,p) = libPoolGetGetMode p & outValue cxt peekEnum
 
 getPoolMaxLifetimeSession :: PtrPool -> IO Int
-getPoolMaxLifetimeSession = _get' (DpiException "getPoolMaxLifetimeSession") libPoolGetMaxLifetimeSession peekInt
+getPoolMaxLifetimeSession = runInt libPoolGetMaxLifetimeSession
 
 getPoolOpenCount :: PtrPool -> IO Int
-getPoolOpenCount = _get' (DpiException "libPoolGetOpenCount") libPoolGetOpenCount peekInt
+getPoolOpenCount = runInt libPoolGetOpenCount
 
 getPoolStmtCacheSize :: PtrPool -> IO Int
-getPoolStmtCacheSize = _get' (DpiException "getPoolStmtCacheSize") libPoolGetStmtCacheSize peekInt
+getPoolStmtCacheSize = runInt libPoolGetStmtCacheSize
 
 getPoolTimeout :: PtrPool -> IO Int
-getPoolTimeout = _get' (DpiException "getPoolTimeout") libPoolGetTimeout peekInt
+getPoolTimeout = runInt libPoolGetTimeout
 
 setPoolGetMode :: PtrPool -> PoolGetMode -> IO Bool
-setPoolGetMode p mode = isOk <$> libPoolSetGetMode p (fe mode)
+setPoolGetMode (cxt,p) mode = libPoolSetGetMode p & inEnum mode & outBool
 
 setPoolMaxLifetimeSession :: PtrPool -> Int -> IO Bool
-setPoolMaxLifetimeSession p maxLifetimeSession = isOk <$> libPoolSetMaxLifetimeSession p (fromIntegral maxLifetimeSession)
+setPoolMaxLifetimeSession (cxt,p) maxLifetimeSession
+  = libPoolSetMaxLifetimeSession p
+    & inInt maxLifetimeSession
+    & outBool
 
 setPoolStmtCacheSize :: PtrPool -> Int -> IO Bool
-setPoolStmtCacheSize p stmtCacheSize = isOk <$> libPoolSetStmtCacheSize p (fromIntegral stmtCacheSize)
+setPoolStmtCacheSize (cxt,p) stmtCacheSize
+  = libPoolSetStmtCacheSize p
+    & inInt stmtCacheSize
+    & outBool
 
 setPoolTimeout :: PtrPool -> Int -> IO Bool
-setPoolTimeout p timeout = isOk <$> libPoolSetTimeout p (fromIntegral timeout)
-
+setPoolTimeout (cxt,p) timeout
+  = libPoolSetTimeout p
+    & inInt timeout
+    & outBool
 
 -- * Statement Interface
 -- $statement
@@ -401,28 +473,29 @@ createStatement
   -> Text       -- ^ SQL String, not allow to use multi lines or semicolon as end of sql.
                 -- use 'normalize' use normalize sql text.
   -> IO PtrStmt
-createStatement p scrollable sql
-  = alloca $ \ps ->
-    withCStringLen (T.unpack sql) $ \(s,slen) -> do
-      ok <- isOk <$> libConnPrepareStmt p (fromBool scrollable) s (fromIntegral slen) nullPtr 0 ps
-      if ok then peek ps else throwDpiException "createStatement"
+createStatement (cxt,p) scrollable sql
+  = libConnPrepareStmt p
+    & inBool scrollable
+    & inStrLen sql
+    & (\f -> f nullPtr 0)
+    & outValue cxt (peekWithCxt cxt)
 
 -- | Normalize SQL, replace newline characters with space characters. and remove semicolon in the end of sql
 normalize :: Text -> Text
-normalize = T.strip
-          . T.dropWhileEnd (==';')
+normalize = T.dropWhileEnd (==';')
+          . T.strip
           . T.map (\c -> if c == '\n' || c == '\r' then ' ' else c)
 
 -- | Closes the statement and makes it unusable for further work immediately,
 -- rather than when the reference count reaches zero.
 closeStatement :: PtrStmt -> IO Bool
-closeStatement p = isOk <$> libStmtClose p nullPtr 0
+closeStatement (cxt, p) = isOk <$> libStmtClose p nullPtr 0
 
 -- | Releases a reference to the statement. A count of the references to the statement is maintained
 -- and when this count reaches zero, the memory associated with the statement is freed
 -- and the statement is closed if that has not already taken place using the function 'closeStatement'.
 releaseStatement :: PtrStmt -> IO Bool
-releaseStatement = runOk libStmtRelease
+releaseStatement = runBool libStmtRelease
 
 withStatement
   :: PtrConn    -- ^ Connection
@@ -438,59 +511,87 @@ withStatement p scrollable sql f
                  a `seq` return a
 
 -- | Scrolls the statement to the position in the cursor specified by the mode and offset.
-scrollStatement :: PtrStmt -> FetchMode -> Int -> IO Bool
-scrollStatement p mode offset = isOk <$> libStmtScroll p (fe mode) (fromIntegral offset) 0
+scrollStatement :: PtrStmt -> FetchMode -> Int -> Int -> IO Bool
+scrollStatement (cxt,p) mode offset rowOffset = libStmtScroll p & inEnum mode & inInt offset & inInt rowOffset & outBool
 
 statementAddRef :: PtrStmt -> IO Bool
-statementAddRef p = isOk <$> libStmtAddRef p
+statementAddRef = runBool libStmtAddRef
 
 -- ** Statement Bind Vars
 
 -- | Binds a variable to a named placeholder in the statement.
 -- A reference to the variable is retained by the library and is released when the statement itself is released or a new variable is bound to the same name.
 bindByName :: PtrStmt -> Text -> PtrVar -> IO Bool
-bindByName p name var
-  = withCStringLen (T.unpack name) $ \(n,nlen) -> isOk <$> libStmtBindByName p n (fromIntegral nlen) var
+bindByName (cxt,p) name (_,var)
+  = libStmtBindByName p
+    & inStrLen name
+    & inVar var
+    & outBool
 
 -- | Binds a variable to a placeholder in the statement by position.
 --  A reference to the variable is retained by the library and is released when the statement itself is released or a new variable is bound to the same position.
 bindByPosition :: PtrStmt -> Int -> PtrVar -> IO Bool
-bindByPosition p pos var = isOk <$> libStmtBindByPos p (fromIntegral pos) var
+bindByPosition (cxt,p) pos (_,var)
+  = libStmtBindByPos p
+    & inInt pos
+    & inVar var
+    & outBool
 
 -- | Binds a value to a named placeholder in the statement without the need to create a variable directly.
 -- One is created implicitly and released when the statement is released or a new value is bound to the same name.
 bindValueByName :: PtrStmt -> Text -> NativeTypeNum -> PtrData -> IO Bool
-bindValueByName p name ntn dt
-  = withCStringLen (T.unpack name) $ \(n,nlen) -> isOk <$> libStmtBindValueByName p n (fromIntegral nlen) (fe ntn) dt
+bindValueByName (cxt,p) name ntn dt
+  = libStmtBindValueByName p
+    & inStrLen name
+    & inEnum ntn
+    & inVar dt
+    & outBool
 
 -- | Binds a value to a placeholder in the statement without the need to create a variable directly.
 -- One is created implicitly and released when the statement is released or a new value is bound to the same position.
 bindValueByPosition :: PtrStmt -> Int -> NativeTypeNum -> PtrData -> IO Bool
-bindValueByPosition p pos ntn dt = isOk <$> libStmtBindValueByPos p (fromIntegral pos) (fe ntn) dt
+bindValueByPosition (cxt,p) pos ntn dt
+  = libStmtBindValueByPos p
+    & inInt pos
+    & inEnum ntn
+    & inVar dt
+    & outBool
 
 -- | Defines the variable that will be used to fetch rows from the statement.
 -- A reference to the variable will be retained until the next define is performed on the same position
 -- or the statement is closed.
 define :: PtrStmt -> Int -> PtrVar -> IO Bool
-define p pos var = isOk <$> libStmtDefine p (fromIntegral pos) var
+define (cxt,p) pos (_,var)
+  = libStmtDefine p
+    & inInt pos
+    & inVar var
+    & outBool
 
 -- | Defines the type of data that will be used to fetch rows from the statement.
 -- This is intended for use with the function 'getQueryValue', when the default data type
 -- derived from the column metadata needs to be overridden by the application.
 -- Internally, a variable is created with the specified data type and size.
 defineValue :: PtrStmt -> Int -> OracleTypeNum -> NativeTypeNum -> Int -> Bool -> PtrObjectType -> IO Bool
-defineValue p pos otn ntn size isSizeInByte ot = isOk <$> libStmtDefineValue p (fromIntegral pos) (fe otn) (fe ntn) (fromIntegral size) (fromBool isSizeInByte) ot
+defineValue (cxt,p) pos otn ntn size isSizeInByte (_,ot)
+  = libStmtDefineValue p
+    & inInt pos
+    & inEnum otn
+    & inEnum ntn
+    & inInt size
+    & inBool isSizeInByte
+    & inVar ot
+    & outBool
 
 -- | Returns the number of bind variables in the prepared statement.
 -- In SQL statements this is the total number of bind variables whereas in PL/SQL statements
 -- this is the count of the unique bind variables.
 getBindCount :: PtrStmt -> IO Int
-getBindCount = _getStmt "getBindCount" libStmtGetBindCount peekInt
+getBindCount = runInt libStmtGetBindCount
 
 -- | Returns the names of the unique bind variables in the prepared statement.
 getBindNames :: PtrStmt -> IO [Text]
-getBindNames p = do
-  c <- getBindCount p
+getBindNames ps@(cxt,p) = do
+  c <- getBindCount ps
   alloca $ \pn  ->
     allocaArray c $ \pan  ->
     alloca $ \panl -> do
@@ -501,29 +602,37 @@ getBindNames p = do
           ac <- peekArray (fromIntegral n) pan
           al <- peek panl
           mapM (`ts` al) ac
-        else throwDpiException "getBindNames"
+        else getContextError cxt >>= throw . ErrorInfoException
 
 getStatementInfo :: PtrStmt -> IO Data_StmtInfo
-getStatementInfo = _getStmt "getStatementInfo" libStmtGetInfo peek
+getStatementInfo = runVar libStmtGetInfo
 
 getFetchArraySize :: PtrStmt -> IO Int
-getFetchArraySize = _getStmt "getFetchArraySize" libStmtGetFetchArraySize peekInt
+getFetchArraySize = runInt libStmtGetFetchArraySize
 
 setFetchArraySize :: PtrStmt -> Int -> IO Bool
-setFetchArraySize p pos = isOk <$> libStmtSetFetchArraySize p (fromIntegral pos)
+setFetchArraySize (cxt,p) pos
+  = libStmtSetFetchArraySize p
+    & inInt pos
+    & outBool
 
 getImplicitResult :: PtrStmt -> IO (Maybe PtrStmt)
-getImplicitResult = _getStmt "getImplicitResult" libStmtGetImplicitResult (mapM peek . toMaybePtr)
+getImplicitResult p@(cxt,_) = do
+  ps <- runMaybeVar libStmtGetImplicitResult p
+  return $ fmap (cxt,) ps
 
 getNumberQueryColumns :: PtrStmt -> IO Int
-getNumberQueryColumns = _getStmt "getNumberQueryColumns" libStmtGetNumQueryColumns peekInt
+getNumberQueryColumns = runInt libStmtGetNumQueryColumns
 
 -- | Returns information about the column that is being queried.
 getQueryInfo
   :: PtrStmt -- ^ Statement
   -> Int     -- ^ the position of the column whose metadata is to be retrieved. The first position is 1.
   -> IO Data_QueryInfo
-getQueryInfo p pos = _getStmt "getQueryInfo" (`libStmtGetQueryInfo` fromIntegral pos) peek p
+getQueryInfo (cxt,p) pos
+  = libStmtGetQueryInfo p
+    & inInt pos
+    & outValue cxt peek
 
 -- | Returns the value of the column at the given position for the currently fetched row,
 -- without needing to provide a variable. If the data type of the column needs to be overridden,
@@ -533,15 +642,14 @@ getQueryValue
   :: PtrStmt -- ^ Statement
   -> Int     -- ^ the position of the column whose metadata is to be retrieved. The first position is 1.
   -> IO DataValue
-getQueryValue p pos
-  = alloca $ \pt ->
-    alloca $ \pd -> do
-      ok <- isOk <$> libStmtGetQueryValue p (fromIntegral pos) pt pd
-      if ok
-        then do
-          t <- te <$> peek pt
-          peek pd >>= _get t
-        else throwDpiException "getQueryValue"
+getQueryValue (cxt,p) pos
+  = libStmtGetQueryValue p
+    & inInt pos
+    & out2Value cxt go
+    where
+      go (pt,pd) = do
+        t <- te <$> peek pt
+        peek pd >>= _get t
 
 -- ** Execute Statement
 
@@ -549,26 +657,25 @@ getQueryValue p pos
 -- For queries this makes available metadata which can be acquired using the function 'getQueryInfo'.
 -- For non-queries, out and in-out variables are populated with their values.
 executeStatement :: PtrStmt -> ExecMode -> IO Int
-executeStatement p mode = _getStmt "executeStatement" (`libStmtExecute` fe mode) go p
-  where
-    go p | nullPtr == p = return 0
-         | otherwise    = peekInt p
+executeStatement ps@(cxt,p) mode = libStmtExecute p & inEnum mode & outValue cxt peekInt
 
 executeMany :: PtrStmt -> ExecMode -> Int -> IO Bool
-executeMany p mode count = isOk <$> libStmtExecuteMany p (fe mode) (fromIntegral count)
+executeMany (_,p) mode count
+  = libStmtExecuteMany p
+    & inEnum mode
+    & inInt  count
+    & outBool
 
 -- | Fetches a single row from the statement. If the statement does not refer to a query an error is returned.
 --  All columns that have not been defined prior to this call are implicitly defined using the metadata made available when the statement was executed.
 fetch :: PtrStmt -> IO (Maybe PageOffset)
-fetch p
-  = alloca $ \pf ->
-    alloca $ \pr -> do
-      ok <- isOk <$> libStmtFetch p pf pr
-      if ok
-        then do
-          found <- toBool <$> peek pf
-          if found then (Just . fromIntegral) <$> peek pr else return Nothing
-        else throwDpiException "fetch"
+fetch (cxt,p)
+  = libStmtFetch p
+    & out2Value cxt go
+    where
+      go (pf,pr) = do
+        found <- toBool <$> peek pf
+        if found then Just <$> peekInt pr else return Nothing
 
 -- Index, RowNum
 type PageOffset = Int64
@@ -585,248 +692,264 @@ fetchRows
   :: PtrStmt -- ^ Statement
   -> Int     -- ^  the maximum number of rows to fetch. If the number of rows available exceeds this value only this number will be fetched.
   -> IO (Bool, [DataValue])
-fetchRows p maxRow
-  = alloca $ \pri ->
-    alloca $ \prf ->
-    alloca $ \pmr -> do
-      ok <- isOk <$> libStmtFetchRows p (fromIntegral maxRow) pri prf pmr
-      if ok
-        then do
-          index <- peek pri
-          num   <- peek prf
-          vs    <- fetch p (fromIntegral index) (fromIntegral num)
-          more  <- toBool <$> peek pmr
-          return (more, vs)
-        else throwDpiException "fetchRows"
+fetchRows ps@(cxt,p) maxRow
+  = libStmtFetchRows p
+    & inInt maxRow
+    & out3Value cxt (go ps)
     where
-      fetch st offset limit = do
+      go ps ((pri,prf), pmr) = do
+        index <- peekInt pri
+        num   <- peekInt prf
+        vs    <- fetch ps index num
+        more  <- toBool <$> peek pmr
+        return (more, vs)
+      fetch p offset limit = do
         count <- getRowCount p
         mapM (getQueryValue p) [1..count]
 
 -- | Returns the number of rows affected by the last DML statement that was executed
 -- or the number of rows currently fetched from a query. In all other cases 0 is returned.
 getRowCount :: PtrStmt -> IO Int
-getRowCount = _getStmt "getRowCount" libStmtGetRowCount peekInt
-
+getRowCount = runInt libStmtGetRowCount
 
 -- | Returns an array of row counts affected by the last invocation of 'executeMany'
 -- with the array DML rowcounts mode enabled.
 -- This feature is only available if both client and server are at 12.1.
 getRowCounts :: PtrStmt -> IO [Int]
-getRowCounts p
-  = alloca $ \pc  ->
-    alloca $ \pac -> do
-      ok <- isOk <$> libStmtGetRowCounts p pc pac
-      if ok
-        then do
-          c   <- peek pc
-          pcs <- peekArray (fromIntegral c) pac
-          mapM peekInt pcs
-        else throwDpiException "getRowCounts"
+getRowCounts (cxt,p)
+  = libStmtGetRowCounts p
+    & out2Value cxt go
+    where
+      go (pc, pac) = do
+        c   <- peekInt pc
+        pcs <- peekArray c pac
+        mapM peekInt pcs
 
 getSubscrQueryId :: PtrStmt -> IO Word64
-getSubscrQueryId = _getStmt "getSubscrQueryId" libStmtGetSubscrQueryId peekInt
+getSubscrQueryId = runInt libStmtGetSubscrQueryId
 
 getBatchErrorCount :: PtrStmt -> IO Int
-getBatchErrorCount = _getStmt "getBatchErrorCount" libStmtGetBatchErrorCount peekInt
+getBatchErrorCount = runInt libStmtGetBatchErrorCount
 
 getBatchErrors :: PtrStmt -> IO [Data_ErrorInfo]
-getBatchErrors p = do
-  c <- getBatchErrorCount p
+getBatchErrors ps@(cxt,p) = do
+  c <- getBatchErrorCount ps
   if c <= 0
     then return []
-    else
+    else do
       allocaArray c $ \par -> do
-        ok <- isOk <$> libStmtGetBatchErrors p (fromIntegral c) par
-        if ok then peekArray c par else throwDpiException "getBatchErrors"
+        ok <- libStmtGetBatchErrors p & inInt c & inVar par & outBool
+        if ok then peekArray c par else throwContextError cxt
 
 -- * Lob Interface
 
+lobAddRef :: PtrLob -> IO Bool
+lobAddRef = runBool libLobAddRef
+
 newTempLob :: PtrConn -> OracleTypeNum -> IO PtrLob
-newTempLob p otn = _get' (DpiException "newTempLob") (flip libConnNewTempLob $ fe otn) peek p
+newTempLob (cxt,p) otn
+  = libConnNewTempLob p
+    & inEnum otn
+    & outValue cxt (peekWithCxt cxt)
 
 closeLob :: PtrLob -> IO Bool
-closeLob = runOk libLobClose
+closeLob = runBool libLobClose
 
 closeLobResource :: PtrLob -> IO Bool
-closeLobResource = runOk libLobCloseResource
+closeLobResource = runBool libLobCloseResource
 
 copyLob :: PtrLob -> IO PtrLob
-copyLob = _get' (DpiException "copyLob") libLobCopy peek
+copyLob p@(cxt,_)= (cxt,) <$> runVar libLobCopy p
 
 flushLob :: PtrLob -> IO Bool
-flushLob = runOk libLobFlushBuffer
+flushLob = runBool libLobFlushBuffer
 
 getLobBufferSize :: PtrLob -> Word64 -> IO Word64
-getLobBufferSize p size = _get' (DpiException "libLobGetBufferSize") (`libLobGetBufferSize` fromIntegral size) peekInt p
+getLobBufferSize (cxt,p) size
+  = libLobGetBufferSize p
+    & inInt size
+    & outValue cxt peekInt
 
 getLobChunkSize :: PtrLob -> IO Int64
-getLobChunkSize = _get' (DpiException "getLobChunkSize") libLobGetChunkSize peekInt
+getLobChunkSize = runInt libLobGetChunkSize
 
 getLobDirectoryAndFileName :: PtrLob -> IO (FilePath, String)
-getLobDirectoryAndFileName p
-  = alloca $ \pd    ->
-    alloca $ \pdlen ->
-    alloca $ \pn    ->
-    alloca $ \pnlen -> do
-      ok <- isOk <$> libLobGetDirectoryAndFileName p pd pdlen pn pnlen
-      if ok
-        then do
-          d    <- peek pd
-          dlen <- peek pdlen
-          n    <- peek pn
-          nlen <- peek pnlen
-          fp   <- ts d dlen
-          name <- ts n nlen
-          return (T.unpack fp, T.unpack name)
-        else throwDpiException "getLobDirectoryAndFileName"
+getLobDirectoryAndFileName (cxt,p) = libLobGetDirectoryAndFileName p & out4Value cxt go
+  where
+    go ((pd, pdlen), (pn, pnlen)) = do
+      d    <- peek pd
+      dlen <- peek pdlen
+      n    <- peek pn
+      nlen <- peek pnlen
+      fp   <- ts d dlen
+      name <- ts n nlen
+      return (T.unpack fp, T.unpack name)
 
 setLobDirectoryAndFileName :: PtrLob -> (FilePath, String) -> IO Bool
-setLobDirectoryAndFileName p (fp, name)
-  = withCStringLen fp   $ \(f, flen) ->
-    withCStringLen name $ \(n, nlen) ->
-      isOk <$> libLobSetDirectoryAndFileName p f (fromIntegral flen) n (fromIntegral nlen)
+setLobDirectoryAndFileName (cxt,p) (fp, name)
+  = libLobSetDirectoryAndFileName p
+    & inStrLen fp
+    & inStrLen name
+    & outBool
 
 lobFileExists :: PtrLob -> IO Bool
-lobFileExists = _get' (DpiException "lobFileExists") libLobGetFileExists peekBool
+lobFileExists (cxt,p) = libLobGetFileExists p & outValue cxt peekBool
 
 isLobResourceOpen :: PtrLob -> IO Bool
-isLobResourceOpen = _get' (DpiException "isLobResourceOpen") libLobGetIsResourceOpen peekBool
+isLobResourceOpen (cxt,p) = libLobGetIsResourceOpen p & outValue cxt peekBool
 
 getLobSize :: PtrLob -> IO Int64
-getLobSize = _get' (DpiException "getLobSize") libLobGetSize peekInt
+getLobSize = runInt libLobGetSize
 
 openLobResource :: PtrLob -> IO Bool
-openLobResource p = isOk <$> libLobOpenResource p
+openLobResource = runBool libLobOpenResource
 
 releaseLob :: PtrLob -> IO Bool
-releaseLob = runOk libLobRelease
+releaseLob = runBool libLobRelease
 
 trimLob :: PtrLob -> Int64 -> IO Bool
-trimLob p size = isOk <$> libLobTrim p (fromIntegral size)
+trimLob (cxt,p) size = libLobTrim p & inInt size & outBool
 
 setLobFromBytes :: PtrLob -> Text -> IO Bool
-setLobFromBytes p buff
-  = withCStringLen (T.unpack buff) $ \(b,blen) ->
-      isOk <$> libLobSetFromBytes p b (fromIntegral blen)
+setLobFromBytes (cxt,p) buff
+  = libLobSetFromBytes p
+    & inStrLen buff
+    & outBool
 
 type BufferSize = Int64
 
 readLobBytes :: PtrLob -> Page -> BufferSize -> IO Text
-readLobBytes p (offset, num) bufferSize
-  = alloca $ \pb    ->
-    alloca $ \pblen -> do
-      poke pblen (fromIntegral bufferSize)
-      ok <- isOk <$> libLobReadBytes p (fromIntegral offset) (fromIntegral num) pb pblen
-      if ok
-        then do
-          blen <- peek pblen
-          T.pack <$> peekCStringLen (pb, fromIntegral blen)
-        else throwDpiException "readLobBytes"
+readLobBytes (cxt,p) (offset, num) bufferSize
+  = libLobReadBytes p
+    & inInt offset
+    & inInt num
+    & uncurry
+    & outValue' cxt get (set bufferSize)
+    where
+      set bs (pb,pblen) = poke pblen (fromIntegral bs)
+      get    (pb,pblen) = do
+        pl <- peek pblen
+        ts pb (fromIntegral pl)
 
 writeLobBytes :: PtrLob -> PageOffset -> Text -> IO Bool
-writeLobBytes p size buff
-  = withCStringLen (T.unpack buff) $ \(b,blen) ->
-      isOk <$> libLobWriteBytes p (fromIntegral size) b (fromIntegral blen)
+writeLobBytes (cxt,p) size buff
+  = libLobWriteBytes p
+    & inInt size
+    & inStrLen buff
+    & outBool
 
 -- * Object Interface
 
+objectAddRef :: PtrObject -> IO Bool
+objectAddRef = runBool libObjectAddRef
+
 objectAppendElement :: PtrObject -> NativeTypeNum -> PtrData -> IO Bool
-objectAppendElement p ntn pd = isOk <$> libObjectAppendElement p (fe ntn) pd
+objectAppendElement (cxt,p) ntn pd
+  = libObjectAppendElement p
+    & inEnum ntn
+    & inVar pd
+    & outBool
 
 copyObject :: PtrObject -> IO PtrObject
-copyObject = _get' (DpiException "copyObject") libObjectCopy peek
+copyObject  p@(cxt,_)= (cxt,) <$> runVar libObjectCopy p
 
 releaseObject :: PtrObject -> IO Bool
-releaseObject = runOk libObjectRelease
+releaseObject = runBool libObjectRelease
 
 trimObject :: PtrObject -> Int -> IO Bool
-trimObject p c = isOk <$> libObjectTrim p (fromIntegral c)
+trimObject (cxt,p) size
+  = libObjectTrim p
+    & inInt size
+    & outBool
 
 objectDeleteElementByIndex :: PtrObject -> Int -> IO Bool
-objectDeleteElementByIndex p i = isOk <$> libObjectDeleteElementByIndex p (fromIntegral i)
+objectDeleteElementByIndex (cxt,p) pos
+  = libObjectDeleteElementByIndex p
+    & inInt pos
+    & outBool
 
 objectSetAttributeValue :: PtrObject -> PtrObjectAttr -> DataValue -> IO Bool
-objectSetAttributeValue p pos v = do
+objectSetAttributeValue (cxt,p) (_,poa) v = do
   (ntn, pd) <- newData v
-  isOk <$> libObjectSetAttributeValue p pos (fe ntn) pd
+  libObjectSetAttributeValue p poa & inEnum ntn & inVar pd & outBool
 
 objectGetAttributeValue :: PtrObject -> PtrObjectAttr -> NativeTypeNum -> IO DataValue
-objectGetAttributeValue p poa ntn
-  = alloca $ \pd -> do
-      ok <- isOk <$> libObjectGetAttributeValue p poa (fe ntn) pd
-      if ok then _get ntn pd else throwDpiException "objectGetAttributeValue"
+objectGetAttributeValue (cxt,p) (_,poa) ntn
+  = libObjectGetAttributeValue p
+    & inVar poa
+    & inEnum ntn
+    & outValue cxt (_get ntn)
 
 objectGetElementExistsByIndex :: PtrObject -> Int -> IO Bool
-objectGetElementExistsByIndex p ind
-  = alloca $ \pd -> do
-      ok <- isOk <$> libObjectGetElementExistsByIndex p (fromIntegral ind) pd
-      if ok then peekBool pd else throwDpiException "objectGetElementExistsByIndex"
+objectGetElementExistsByIndex (cxt,p) ind
+  = libObjectGetElementExistsByIndex p
+    & inInt ind
+    & outValue cxt peekBool
 
 objectSetElementValueByIndex :: PtrObject -> Int -> DataValue -> IO Bool
-objectSetElementValueByIndex p ind v = do
+objectSetElementValueByIndex (cxt,p) ind v = do
   (ntn, pd) <- newData v
-  isOk <$> libObjectSetElementValueByIndex p (fromIntegral ind) (fe ntn) pd
+  libObjectSetElementValueByIndex p & inInt ind & inEnum ntn & inVar pd & outBool
 
 objectGetElementValueByIndex :: PtrObject -> Int -> NativeTypeNum -> IO DataValue
-objectGetElementValueByIndex p pos ntn
-  = alloca $ \pd -> do
-      ok <- isOk <$> libObjectGetElementValueByIndex p (fromIntegral pos) (fe ntn) pd
-      if ok then _get ntn pd else throwDpiException "objectGetElementValueByIndex"
+objectGetElementValueByIndex (cxt,p) pos ntn
+  = libObjectGetElementValueByIndex p
+    & inInt pos
+    & inEnum ntn
+    & outValue cxt (_get ntn)
 
 objectGetFirstIndex :: PtrObject -> IO (Maybe Int)
-objectGetFirstIndex = _objIndex libObjectGetFirstIndex
+objectGetFirstIndex = runIndex libObjectGetFirstIndex
 
 objectGetLastIndex :: PtrObject -> IO (Maybe Int)
-objectGetLastIndex = _objIndex libObjectGetLastIndex
+objectGetLastIndex = runIndex libObjectGetLastIndex
 
-objectGetNextIndex :: Int -> PtrObject -> IO (Maybe Int)
-objectGetNextIndex ind = _objIndex (flip libObjectGetNextIndex $ fromIntegral ind)
+objectGetNextIndex :: PtrObject -> Int -> IO (Maybe Int)
+objectGetNextIndex p ind = runIndex (flip libObjectGetNextIndex $ fromIntegral ind) p
 
-objectGetPrevIndex :: Int -> PtrObject -> IO (Maybe Int)
-objectGetPrevIndex ind = _objIndex (flip libObjectGetPrevIndex $ fromIntegral ind)
+objectGetPrevIndex :: PtrObject -> Int -> IO (Maybe Int)
+objectGetPrevIndex p ind = runIndex (flip libObjectGetPrevIndex $ fromIntegral ind) p
 
 getObjectSize :: PtrObject -> IO Int
-getObjectSize = _get' (DpiException "getObjectSize") libObjectGetSize peekInt
+getObjectSize = runInt libObjectGetSize
 
 getObjectAttrInfo :: PtrObjectAttr -> IO Data_ObjectAttrInfo
-getObjectAttrInfo = _get' (DpiException "getObjectAttrInfo") libObjectAttrGetInfo peek
+getObjectAttrInfo = runVar libObjectAttrGetInfo
 
 objectAttrAddRef :: PtrObjectAttr -> IO Bool
-objectAttrAddRef = runOk libObjectAttrAddRef
+objectAttrAddRef = runBool libObjectAttrAddRef
 
 releaseObjectAttr :: PtrObjectAttr -> IO Bool
-releaseObjectAttr = runOk libObjectAttrRelease
+releaseObjectAttr = runBool libObjectAttrRelease
 
 objectTypeAddRef :: PtrObjectType-> IO Bool
-objectTypeAddRef = runOk libObjectTypeAddRef
+objectTypeAddRef = runBool libObjectTypeAddRef
 
 createObjectByType :: PtrObjectType -> IO PtrObject
-createObjectByType = _get' (DpiException "createObjectByType") libObjectTypeCreateObject peek
+createObjectByType p@(cxt,_)= (cxt,) <$> runVar libObjectTypeCreateObject p
 
 objectTypeGetAttributes :: PtrObjectType -> Int -> IO PtrObjectAttr
-objectTypeGetAttributes p num = _get' (DpiException "objectTypeGetAttributes") (flip libObjectTypeGetAttributes $ fromIntegral num) peek p
+objectTypeGetAttributes (cxt,p) num
+  = libObjectTypeGetAttributes p
+    & inInt num
+    & outValue cxt (peekWithCxt cxt)
 
 objectTypeGetInfo :: PtrObjectType -> IO Data_ObjectTypeInfo
-objectTypeGetInfo = _get' (DpiException "objectTypeGetInfo") libObjectTypeGetInfo peek
+objectTypeGetInfo = runVar libObjectTypeGetInfo
 
 releaseObjectType :: PtrObjectType -> IO Bool
-releaseObjectType = runOk libObjectTypeRelease
+releaseObjectType = runBool libObjectTypeRelease
 
 -- * Rowid Interface
 
 rowidAddRef :: PtrRowid -> IO Bool
-rowidAddRef = runOk libRowidAddRef
+rowidAddRef = runBool libRowidAddRef
 
 releaseRowid :: PtrRowid -> IO Bool
-releaseRowid = runOk libRowidRelease
+releaseRowid = runBool libRowidRelease
 
 rowidGetStringValue :: PtrRowid -> IO Text
-rowidGetStringValue p
-  = alloca $ \ps    ->
-    alloca $ \pslen -> do
-      ok <- isOk <$> libRowidGetStringValue p ps pslen
-      if ok then join $ ts <$> peek ps <*> peek pslen else throwDpiException "rowidGetStringValue"
+rowidGetStringValue (cxt,p) = libRowidGetStringValue p & out2Value cxt peekCStrLen
 
 -- * Var Interface
 -- $var
@@ -848,59 +971,289 @@ newVar :: PtrConn       -- ^ Connection
        -> Bool          -- ^ isArray
        -> PtrObjectType -- ^ Object type
        -> IO (PtrVar, [PtrData])
-newVar p otn ntn maxArraySize size sizeIsBytes isArray oto
-  = alloca $ \pv ->
-    alloca $ \pd -> do
-      ok <- isOk <$> libConnNewVar p (fe otn) (fe ntn) (fromIntegral maxArraySize) (fromIntegral size) (fromBool sizeIsBytes) (fromBool isArray) oto pv pd
-      if ok then do
-          v <- peek pv
-          d <- peekArray (fromIntegral maxArraySize) pd
-          return (v, d)
-        else throwDpiException "newVar"
+newVar (cxt,p) otn ntn maxArraySize size sizeIsBytes isArray (_,oto)
+  = libConnNewVar p
+    & inEnum otn
+    & inEnum ntn
+    & inInt maxArraySize
+    & inInt size
+    & inBool sizeIsBytes
+    & inBool isArray
+    & inVar oto
+    & out2Value cxt (go cxt)
+    where
+      go cxt (pv,pd) = do
+        v <- peek pv
+        d <- peekArray (fromIntegral maxArraySize) pd
+        return ((cxt,v), d)
 
 
 varAddRef :: PtrVar -> IO Bool
-varAddRef = runOk libVarAddRef
+varAddRef = runBool libVarAddRef
 
 copyVar :: PtrVar -> Int -> PtrVar -> Int -> IO Bool
-copyVar to toPos from fromPos = isOk <$> libVarCopyData to (fromIntegral toPos) from (fromIntegral fromPos)
+copyVar (_,p) toPos (_,from) fromPos
+  = libVarCopyData p
+    & inInt toPos
+    & inVar from
+    & inInt fromPos
+    & outBool
 
 varGetData :: PtrVar -> IO [Data]
-varGetData p
-  = alloca $ \pn ->
-    alloca $ \pd -> do
-      ok <- isOk <$> libVarGetData p pn pd
-      if ok
-        then do
-          n <- peek pn
-          d <- peek pd
-          peekArray (fromIntegral n) d
-        else throwDpiException "varGetData"
+varGetData (cxt,p) = libVarGetData p & out2Value cxt go
+  where
+    go (pn, pd) = join $ peekArray <$> peekInt pn <*> peek pd
 
 varGetNumberOfElements :: PtrVar -> IO Int
-varGetNumberOfElements = _get' (DpiException "varGetNumberOfElements") libVarGetNumElementsInArray peekInt
+varGetNumberOfElements = runInt libVarGetNumElementsInArray
 
 varGetSizeInBytes :: PtrVar -> IO Int
-varGetSizeInBytes = _get' (DpiException "varGetSizeInBytes") libVarGetSizeInBytes peekInt
+varGetSizeInBytes = runInt libVarGetSizeInBytes
 
 releaseVar :: PtrVar -> IO Bool
-releaseVar = runOk libVarRelease
+releaseVar = runBool libVarRelease
 
 setVarFromBytes :: PtrVar -> Int -> Text -> IO Bool
-setVarFromBytes p pos bytes
-  = withCStringLen (T.unpack bytes) $ \(b,blen) -> isOk <$> libVarSetFromBytes p (fromIntegral pos) b (fromIntegral blen)
+setVarFromBytes (cxt,p) pos bytes
+  = libVarSetFromBytes p
+    & inInt pos
+    & inStrLen bytes
+    & outBool
 
 setVarFromLob :: PtrVar -> Int -> PtrLob -> IO Bool
-setVarFromLob p pos lob = isOk <$> libVarSetFromLob p (fromIntegral pos) lob
+setVarFromLob (cxt,p) pos (_,lob) = libVarSetFromLob p & inInt pos & inVar lob & outBool
 
 setVarFromObject :: PtrVar -> Int -> PtrObject -> IO Bool
-setVarFromObject p pos obj = isOk <$> libVarSetFromObject p (fromIntegral pos) obj
+setVarFromObject (_,p) pos (_,obj) = libVarSetFromObject p & inInt pos & inVar obj & outBool
 
 setVarFromRowid :: PtrVar -> Int -> PtrRowid -> IO Bool
-setVarFromRowid p pos obj = isOk <$> libVarSetFromRowid p (fromIntegral pos) obj
+setVarFromRowid (_,p) pos (_,row) = libVarSetFromRowid p & inInt pos & inVar row & outBool
 
 setVarFromStatement :: PtrVar -> Int -> PtrStmt -> IO Bool
-setVarFromStatement p pos obj = isOk <$> libVarSetFromStmt p (fromIntegral pos) obj
+setVarFromStatement (_,p) pos (_,st) = libVarSetFromStmt p & inInt pos & inVar st & outBool
 
 setVarNumberOfElements :: PtrVar -> Int -> IO Bool
-setVarNumberOfElements p num = isOk <$> libVarSetNumElementsInArray p (fromIntegral num)
+setVarNumberOfElements (_,p) num = libVarSetNumElementsInArray p & inInt num & outBool
+
+
+-- * DeqOptions Interface
+
+newDeqOptions :: PtrConn -> IO PtrDeqOptions
+newDeqOptions (cxt,p) = libConnNewDeqOptions p & outValue cxt (peekWithCxt cxt)
+
+deqObject
+  :: PtrConn         -- ^ a reference to the connection from which the message is to be dequeued
+  -> Text            -- ^ the name of the queue from which the message is to be dequeued
+  -> PtrDeqOptions   -- ^ a reference to the dequeue options that should be used when dequeuing the message from the queue.
+  -> PtrMsgProps     -- ^ a reference to the message properties that will be populated with information from the message that is dequeued.
+  -> PtrObject       -- ^ a reference to the object which will be populated with the message that is dequeued.
+  -> IO (Maybe Text) -- ^ a pointer to a byte string which will be populated with the id of the message that is dequeued
+deqObject (cxt,p) queueName (_,options) (_,props) (_,payload)
+  = libConnDeqObject p
+    & inStrLen queueName
+    & inVar options
+    & inVar props
+    & inVar payload
+    & out2Value cxt go
+    where
+      go ps@(p,_) | p == nullPtr = return Nothing
+                  | otherwise    = Just <$> peekCStrLen ps
+
+
+deqOptionsAddRef :: PtrDeqOptions -> IO Bool
+deqOptionsAddRef = runBool libDeqOptionsAddRef
+
+getDeqOptionsCondition :: PtrDeqOptions -> IO Text
+getDeqOptionsCondition = runText libDeqOptionsGetCondition
+
+setDeqOptionsCondition :: PtrDeqOptions -> Text -> IO Bool
+setDeqOptionsCondition = setText libDeqOptionsSetCondition
+
+getDeqOptionsConsumerName :: PtrDeqOptions -> IO Text
+getDeqOptionsConsumerName = runText libDeqOptionsGetConsumerName
+
+setDeqOptionsConsumerName :: PtrDeqOptions -> Text -> IO Bool
+setDeqOptionsConsumerName = setText libDeqOptionsSetConsumerName
+
+getDeqOptionsCorrelation :: PtrDeqOptions -> IO Text
+getDeqOptionsCorrelation = runText libDeqOptionsGetCorrelation
+
+setDeqOptionsCorrelation :: PtrDeqOptions -> Text -> IO Bool
+setDeqOptionsCorrelation = setText libDeqOptionsSetCorrelation
+
+getDeqOptionsMode :: PtrDeqOptions -> IO DeqMode
+getDeqOptionsMode (cxt,p) = libDeqOptionsGetMode p & outValue cxt peekEnum
+
+setDeqOptionsMode :: PtrDeqOptions -> DeqMode -> IO Bool
+setDeqOptionsMode (cxt,p) mdm = libDeqOptionsSetMode p & inEnum mdm & outBool
+
+getDeqOptionsMsgId :: PtrDeqOptions -> IO Text
+getDeqOptionsMsgId = runText libDeqOptionsGetMsgId
+
+setDeqOptionsMsgId :: PtrDeqOptions -> Text -> IO Bool
+setDeqOptionsMsgId = setText libDeqOptionsSetMsgId
+
+getDeqOptionsNavigation :: PtrDeqOptions -> IO DeqNavigation
+getDeqOptionsNavigation (cxt,p) = libDeqOptionsGetNavigation p & outValue cxt peekEnum
+
+setDeqOptionsNavigation :: PtrDeqOptions -> DeqNavigation -> IO Bool
+setDeqOptionsNavigation (cxt,p) mdm = libDeqOptionsSetNavigation p & inEnum mdm & outBool
+
+getDeqOptionsTransformation :: PtrDeqOptions -> IO Text
+getDeqOptionsTransformation = runText libDeqOptionsGetTransformation
+
+setDeqOptionsTransformation :: PtrDeqOptions -> Text -> IO Bool
+setDeqOptionsTransformation = setText libDeqOptionsSetTransformation
+
+getDeqOptionsVisibility :: PtrDeqOptions -> IO Visibility
+getDeqOptionsVisibility (cxt,p) = libDeqOptionsGetVisibility p & outValue cxt peekEnum
+
+setDeqOptionsVisibility :: PtrDeqOptions -> Visibility -> IO Bool
+setDeqOptionsVisibility (cxt,p) mdm = libDeqOptionsSetVisibility p & inEnum mdm & outBool
+
+getDeqOptionsWait :: PtrDeqOptions -> IO Int
+getDeqOptionsWait = runInt libDeqOptionsGetWait
+
+setDeqOptionsWait :: PtrDeqOptions -> Int -> IO Bool
+setDeqOptionsWait (cxt,p) wait = libDeqOptionsSetWait p & inInt wait & outBool
+
+setDeqOptionsDeliveryMode :: PtrDeqOptions -> MessageDeliveryMode -> IO Bool
+setDeqOptionsDeliveryMode (cxt,p) mdm = libDeqOptionsSetDeliveryMode p & inEnum mdm & outBool
+
+releaseDeqOptions :: PtrDeqOptions -> IO Bool
+releaseDeqOptions = runBool libDeqOptionsRelease
+
+-- * EnqOptions Interface
+
+newEnqOptions :: PtrConn -> IO PtrEnqOptions
+newEnqOptions (cxt,p) = libConnNewEnqOptions p & outValue cxt (peekWithCxt cxt)
+
+enqObject
+  :: PtrConn         -- ^ a reference to the connection from which the message is to be enqueued
+  -> Text            -- ^ the name of the queue from which the message is to be enqueued
+  -> PtrEnqOptions   -- ^ a reference to the enqueue options that should be used when enqueued the message from the queue.
+  -> PtrMsgProps     -- ^ a reference to the message properties that will be populated with information from the message that is enqueued.
+  -> PtrObject       -- ^ a reference to the object which will be populated with the message that is enqueued.
+  -> IO (Maybe Text) -- ^ a pointer to a byte string which will be populated with the id of the message that is enqueued
+enqObject (cxt,p) queueName (_,options) (_,props) (_,payload)
+  = libConnEnqObject p
+    & inStrLen queueName
+    & inVar options
+    & inVar props
+    & inVar payload
+    & out2Value cxt go
+    where
+      go ps@(p,_) | p == nullPtr = return Nothing
+                  | otherwise    = Just <$> peekCStrLen ps
+
+
+enqOptionsAddRef :: PtrEnqOptions -> IO Bool
+enqOptionsAddRef = runBool libEnqOptionsAddRef
+
+getEnqOptionsTransformation :: PtrEnqOptions -> IO Text
+getEnqOptionsTransformation = runText libEnqOptionsGetTransformation
+
+setEnqOptionsTransformation :: PtrEnqOptions -> Text -> IO Bool
+setEnqOptionsTransformation = setText libEnqOptionsSetTransformation
+
+releaseEnqOptions :: PtrEnqOptions -> IO Bool
+releaseEnqOptions = runBool libEnqOptionsRelease
+
+getEnqOptionsVisibility :: PtrEnqOptions -> IO Visibility
+getEnqOptionsVisibility (cxt,p) = libEnqOptionsGetVisibility p & outValue cxt peekEnum
+
+setEnqOptionsVisibility :: PtrEnqOptions -> Visibility -> IO Bool
+setEnqOptionsVisibility (cxt,p) mdm = libEnqOptionsSetVisibility p & inEnum mdm & outBool
+
+setEnqOptionsDeliveryMode :: PtrEnqOptions -> MessageDeliveryMode -> IO Bool
+setEnqOptionsDeliveryMode (cxt,p) mdm = libEnqOptionsSetDeliveryMode p & inEnum mdm & outBool
+
+
+-- * MsgProps
+
+newMsgProps :: PtrConn -> IO PtrMsgProps
+newMsgProps (cxt,p) =libConnNewMsgProps p & outValue cxt (peekWithCxt cxt)
+
+msgPropsAddRef :: PtrMsgProps -> IO Bool
+msgPropsAddRef = runBool libMsgPropsAddRef
+
+releaseMsgProps :: PtrMsgProps -> IO Bool
+releaseMsgProps = runBool libMsgPropsRelease
+
+getMsgPropsCorrelation :: PtrMsgProps -> IO Text
+getMsgPropsCorrelation = runText libMsgPropsGetCorrelation
+
+setMsgPropsCorrelation :: PtrMsgProps -> Text -> IO Bool
+setMsgPropsCorrelation = setText libMsgPropsSetCorrelation
+
+getMsgPropsNumAttempts :: PtrMsgProps -> IO Int
+getMsgPropsNumAttempts = runInt libMsgPropsGetNumAttempts
+
+getMsgPropsDelay :: PtrMsgProps -> IO Int
+getMsgPropsDelay = runInt libMsgPropsGetDelay
+
+setMsgPropsDelay :: PtrMsgProps -> Int -> IO Bool
+setMsgPropsDelay (cxt,p) delay = libMsgPropsSetDelay p & inInt delay & outBool
+
+getMsgPropsDeliveryMode :: PtrMsgProps -> IO MessageDeliveryMode
+getMsgPropsDeliveryMode (cxt,p) = libMsgPropsGetDeliveryMode p & outValue cxt peekEnum
+
+getMsgPropsEnqTime :: PtrMsgProps -> IO Data_Timestamp
+getMsgPropsEnqTime = runVar libMsgPropsGetEnqTime
+
+getMsgPropsExceptionQ :: PtrMsgProps -> IO Text
+getMsgPropsExceptionQ = runText libMsgPropsGetExceptionQ
+
+setMsgPropsExceptionQ :: PtrMsgProps -> Text -> IO Bool
+setMsgPropsExceptionQ = setText libMsgPropsSetExceptionQ
+
+getMsgPropsExpiration :: PtrMsgProps -> IO Int
+getMsgPropsExpiration = runInt libMsgPropsGetExpiration
+
+setMsgPropsExpiration :: PtrMsgProps -> Int -> IO Bool
+setMsgPropsExpiration (cxt,p) delay = libMsgPropsSetExpiration p & inInt delay & outBool
+
+getMsgPropsOriginalMsgId :: PtrMsgProps -> IO Text
+getMsgPropsOriginalMsgId = runText libMsgPropsGetOriginalMsgId
+
+setMsgPropsOriginalMsgId :: PtrMsgProps -> Text -> IO Bool
+setMsgPropsOriginalMsgId = setText libMsgPropsSetOriginalMsgId
+
+getMsgPropsPriority :: PtrMsgProps -> IO Int
+getMsgPropsPriority = runInt libMsgPropsGetPriority
+
+setMsgPropsPriority :: PtrMsgProps -> Int -> IO Bool
+setMsgPropsPriority (cxt,p) delay = libMsgPropsSetPriority p & inInt delay & outBool
+
+getMsgPropsState :: PtrMsgProps -> IO MessageState
+getMsgPropsState (cxt,p) = libMsgPropsGetState p & outValue cxt peekEnum
+
+-- * Interface Subscr
+
+newSubscr
+  :: PtrConn
+  -> (Data_SubscrCreateParams -> Data_SubscrCreateParams)
+  -> IO PtrSubscr
+newSubscr (cxt,p)  hcmp
+  = libConnNewSubscription p
+    & inPtr (\c -> libContextInitSubscrCreateParams cxt c >> peek c >>= poke c . hcmp)
+    & out2Value cxt (go cxt)
+    where
+      go cxt (p,_) = (cxt,) <$> peek p
+
+subscrAddRef :: PtrSubscr -> IO Bool
+subscrAddRef = runBool libSubscrAddRef
+
+closeSubscr :: PtrSubscr -> IO Bool
+closeSubscr = runBool libSubscrClose
+
+releaseSubscr :: PtrSubscr -> IO Bool
+releaseSubscr = runBool libSubscrRelease
+
+
+-- libSubscrAddRef
+--
+-- libSubscrPrepareStmt
+--
+
+

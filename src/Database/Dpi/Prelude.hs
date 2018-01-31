@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Database.Dpi.Prelude
   ( module Foreign
@@ -8,6 +9,7 @@ module Database.Dpi.Prelude
   , (<>)
   , (&)
   , Text
+  , HasCallStack
   ) where
 
 import           Control.Exception
@@ -19,6 +21,7 @@ import qualified Data.Text         as T
 import           Foreign
 import           Foreign.C.String
 import           Foreign.C.Types
+import           GHC.Stack
 
 toMaybePtr :: Ptr a -> Maybe (Ptr a)
 toMaybePtr p = if p == nullPtr then Nothing else Just p
@@ -45,5 +48,5 @@ fb :: Text -> IO CStringLen
 fb s | T.null s    = return (nullPtr,0)
      | otherwise = newCStringLen $ unpack s
 
-noImplement :: a
+noImplement :: HasCallStack => a
 noImplement = error "Not supported yet"

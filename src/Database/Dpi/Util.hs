@@ -4,6 +4,7 @@
 {-# LANGUAGE InstanceSigs           #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE OverloadedStrings      #-}
+{-# LANGUAGE TupleSections          #-}
 {-# LANGUAGE UndecidableInstances   #-}
 module Database.Dpi.Util where
 
@@ -18,14 +19,9 @@ isOk = (== success)
 
 data DpiException
   = ErrorInfoException Data_ErrorInfo
-  | DpiException Text
-  | ConnectionPropNotFound Text
   deriving Show
 
 instance Exception DpiException
-
-throwDpiException :: Text -> IO a
-throwDpiException = throw . DpiException
 
 class WithPtrs a where
   withPtrs :: (a -> IO b) -> IO b
@@ -47,26 +43,105 @@ instance Monad m => HasMonad m (m a) where
 instance (HasMonad m r) => HasMonad m (a -> r) where
   app mb f = app mb . flip f
 
-inStr :: (HasMonad IO r) => Text -> (CString -> r) -> r
-inStr text f = unM $ withCString (T.unpack text) (return . f)
+inVar :: a -> (a -> r) -> r
+inVar = (&)
 
-inStrLen :: (HasMonad IO r) => Text -> (Ptr CChar -> CUInt -> r) -> r
-inStrLen text f = unM $ withCStringLen (T.unpack text) $ \(c,clen) -> return $ f c (fromIntegral clen)
+class ToString s where
+  toString :: s -> String
+
+instance ToString String where
+  toString = id
+
+instance ToString Text where
+   toString = T.unpack
+
+inStr :: (HasMonad IO r, ToString s) => s -> (CString -> r) -> r
+inStr text f = unM $ withCString (toString text) (return . f)
+
+inStrLen :: (HasMonad IO r, ToString s, Integral n) => s -> (Ptr CChar -> n -> r) -> r
+inStrLen text f = unM $ withCStringLen (toString text) $ \(c,clen) -> return $ f c (fromIntegral clen)
 
 inInt :: (Num n, Integral i) => i -> (n -> r) -> r
 inInt n f = f $ fromIntegral n
 
+inEnum :: (Enum e, Integral n) => e -> (n -> r) -> r
+inEnum e f = f $ fe e
+
+inBool :: Integral n => Bool -> (n -> r) -> r
+inBool b f = f $ fromBool b
+
 inPtr :: (HasMonad IO r, Storable a) => (Ptr a -> IO b) -> (Ptr a -> r) -> r
 inPtr init f = unM $ withPtrs $ \c -> init c >> return (f c)
 
-outPtrs :: WithPtrs a => (a -> r -> IO b) -> (a -> IO r) -> IO b
-outPtrs g f = withPtrs $ \a -> f a >>= g a
+outBool :: IO CInt -> IO Bool
+outBool = (isOk <$>)
 
-checkOk :: Storable a => Text -> (Ptr a -> IO b) -> Ptr a -> CInt -> IO b
-checkOk err f p r = if isOk r then f p else throwDpiException err
+setText :: (Ptr a -> Ptr CChar -> CUInt -> IO CInt) -> HasCxtPtr a -> Text -> IO Bool
+setText f (cxt,p) s = f p & inStrLen s & outBool
 
-runOk :: (Ptr a -> IO CInt) -> Ptr a -> IO Bool
-runOk f p = isOk <$> f p
+-- | Returns error information for the last error that was raised by the library.
+-- This function must be called with the same thread that generated the error.
+--  It must also be called before any other ODPI-C library calls are made on
+-- the calling thread since the error information specific to that thread is cleared
+--  at the start of every ODPI-C function call.
+getContextError :: PtrContext -> IO Data_ErrorInfo
+getContextError p = alloca $ \pe -> libContextGetError p pe >> peek pe
+
+throwContextError :: HasCallStack => PtrContext -> IO a
+throwContextError cxt = getContextError cxt >>= throw . ErrorInfoException
+
+outValue :: (WithPtrs a) => PtrContext -> (a -> IO b) -> (a -> IO CInt) -> IO b
+outValue cxt ab = outValue' cxt ab return
+
+outValue' :: (WithPtrs a, HasCallStack) => PtrContext -> (a -> IO b) -> (a -> IO c) -> (a -> IO CInt) -> IO b
+outValue' cxt ab be lib = withPtrs $ \a -> do
+  be a
+  r <- lib a
+  if isOk r then ab a else throwContextError cxt
+
+runIndex f (cxt,p) = f p & out2Value cxt go
+  where
+    go (pos,pin) = do
+      ok <- peekBool pin
+      if ok then Just <$> peekInt pos else return Nothing
+
+out2Value :: (Storable x, Storable y) => PtrContext -> ((Ptr x, Ptr y) -> IO b) -> (Ptr x -> Ptr y -> IO CInt) -> IO b
+out2Value cxt f g = outValue cxt f (uncurry g)
+
+out3Value
+  :: (Storable x, Storable y, Storable z)
+  => PtrContext -> (((Ptr x, Ptr y), Ptr z) -> IO b) -> (Ptr x -> Ptr y -> Ptr z -> IO CInt) -> IO b
+out3Value cxt f g = outValue cxt f (go g)
+  where
+    go f ((x,y),z) = f x y z
+
+out4Value
+  :: (Storable x, Storable y, Storable z, Storable w)
+  => PtrContext -> (((Ptr x, Ptr y), (Ptr z,Ptr w)) -> IO b) -> (Ptr x -> Ptr y -> Ptr z -> Ptr w -> IO CInt) -> IO b
+out4Value cxt f g = outValue cxt f (go g)
+  where
+    go f ((x,y),(z,w)) = f x y z w
+
+runBool :: (Ptr a -> IO CInt) -> (PtrContext, Ptr a) -> IO Bool
+runBool f (_, p) = isOk <$> f p
+
+runInt :: (Storable i, Integral i, Integral n) => (Ptr a -> Ptr i -> IO CInt) -> HasCxtPtr a -> IO n
+runInt f p = fromIntegral <$> runVar f p
+
+runMaybeInt :: (Storable i, Integral i, Integral n) => (Ptr a -> Ptr i -> IO CInt) -> HasCxtPtr a -> IO (Maybe n)
+runMaybeInt f p = fmap fromIntegral <$> runMaybeVar f p
+
+runText :: (Ptr a -> Ptr (Ptr CChar) -> Ptr CUInt -> IO CInt) -> HasCxtPtr a -> IO Text
+runText f (cxt,p) = f p & out2Value cxt peekCStrLen
+
+runVar :: Storable i => (Ptr a -> Ptr i -> IO CInt) -> HasCxtPtr a -> IO i
+runVar f (cxt,p) = f p & outValue cxt peek
+
+runMaybeVar :: Storable i => (Ptr a -> Ptr i -> IO CInt) -> HasCxtPtr a -> IO (Maybe i)
+runMaybeVar f (cxt,p) = f p & outValue cxt (mapM peek . toMaybePtr)
+
+peekWithCxt :: Storable a => PtrContext -> Ptr a -> IO (PtrContext, a)
+peekWithCxt cxt p = (cxt,) <$> peek p
 
 peekInt :: (Num n, Integral a, Storable a) => Ptr a -> IO n
 peekInt p = fromIntegral <$> peek p
@@ -74,55 +149,15 @@ peekInt p = fromIntegral <$> peek p
 peekBool :: Ptr CInt -> IO Bool
 peekBool p = isOk <$> peek p
 
-_getConnValue :: (PtrConn -> Ptr (Ptr CChar) -> Ptr CUInt -> IO Text -> IO a) -> PtrConn -> IO a
-_getConnValue f p = withPtrs $ \(ps,pslen) -> f p ps pslen (join $ ts <$> peek ps <*> peek pslen)
+peekEnum :: (Enum e,Storable i, Integral i) => Ptr i -> IO e
+peekEnum p = te <$> peek p
 
-_getConn :: Text -> (PtrConn -> Ptr (Ptr CChar) -> Ptr CUInt -> IO CInt) -> PtrConn -> IO Text
-_getConn key f = _getConnValue $ go key f
-  where
-    go key f p ps pslen pstr = do
-      ok <- isOk <$> f p ps pslen
-      if ok then pstr else throw $ ConnectionPropNotFound key
+-- peekCStrLen
 
-_getConnStrAndObj :: Storable a
-                  => (PtrConn -> Ptr (Ptr CChar) -> Ptr CUInt -> Ptr a -> IO CInt)
-                  -> Text
-                  -> PtrConn
-                  -> IO (Text, a)
-_getConnStrAndObj f key = _getConnValue (go key f)
-  where
-    go key f p ps pslen pstr = alloca $ \pv -> do
-      ok <- isOk <$> f p ps pslen pv
-      if ok
-        then do
-          s <- pstr
-          v <- peek pv
-          return (s,v)
-        else throw $ ConnectionPropNotFound key
+peekCStrLen :: (Ptr (Ptr CChar), Ptr CUInt) -> IO Text
+peekCStrLen (p,plen) = join $ ts <$> peek p <*> peek plen
 
-_get' :: Storable a => DpiException -> (Ptr p -> Ptr a -> IO CInt) -> (Ptr a -> IO b) -> Ptr p -> IO b
-_get' e f v p
-  = alloca $ \pc -> do
-      ok <- isOk <$> f p pc
-      if ok then v pc else throw e
-
-
-_getStmt :: Storable a => Text -> (PtrStmt -> Ptr a -> IO CInt) -> (Ptr a -> IO b) -> PtrStmt -> IO b
-_getStmt c = _get' (DpiException c)
-
--- GetData
 _get :: NativeTypeNum -> PtrData -> IO DataValue
 _get t p = do
   Data get <- peek p
   get t
-
-_objIndex :: (PtrObject -> Ptr CInt -> Ptr CInt -> IO CInt) -> PtrObject -> IO (Maybe Int)
-_objIndex f p
-  = alloca $ \pi ->
-    alloca $ \pe -> do
-      ok <- isOk <$> f p pi pe
-      if ok
-        then do
-          e <- peekBool pe
-          if e then (Just .fromIntegral) <$> peek pi else return Nothing
-        else throwDpiException ""

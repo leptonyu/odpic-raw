@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+import           Control.Exception
 import           Test.Hspec
 import           Test.QuickCheck
 
@@ -23,7 +24,7 @@ main = hspec $ do
 
 
     it "Connection Test" $ withContext $ \cxt -> do
-      conn  <- createConnection cxt username password connstr id
+      conn  <- createConnection cxt username password connstr id id
       pOk   <- pingConnection conn
       pOk `shouldBe` True
       getEncodingInfo  conn >>= print
@@ -42,7 +43,7 @@ main = hspec $ do
       pNOk `shouldBe` False
 
     it "Statement 1 Test" $ withContext $ \cxt -> do
-      withConnection cxt username password connstr "" "" $ \conn -> do
+      withConnection cxt username password connstr "utf-8" "utf-8" $ \conn -> do
         st <- createStatement conn False "SELECT SYSDATE FROM DUAL"
         c  <- getBindCount st
         c  `shouldBe` 0
@@ -69,7 +70,7 @@ main = hspec $ do
         ok `shouldBe` True
 
     it "Statement 2 Test" $ withContext $ \cxt -> do
-      withConnection cxt username password connstr "" "" $ \conn -> do
+      withConnection cxt username password connstr "utf-8" "utf-8" $ \conn -> do
         withStatement conn False "SELECT 1,'中文' as 文字,SYSDATE FROM DUAL" $ \st -> do
           r <- executeStatement st ModeExecDefault
           r `shouldBe` 3
@@ -82,12 +83,23 @@ main = hspec $ do
           f <- fetch st
           f `shouldBe` Just 0
           mapM (getQueryValue st) [1..r] >>= print
+          f2 <- fetch st
+          f2 `shouldBe` Nothing
+
+    it "Statement 3 Failed Test" $ withContext $ \cxt -> do
+      withConnection cxt username password connstr "" "" $ \conn -> do
+        withStatement conn False "Wrong sql" $ \st -> do
+          executeStatement st ModeExecDefault `shouldThrow` anyException
 
     it "Pool Test" $ withContext $ \cxt -> do
-      withPool cxt username password connstr "" "" 2 $ \pool ->
+      withPool cxt username password connstr "utf-8" "utf-8" 2 $ \pool ->
         withPoolConnection pool $ \conn -> do
           let f _ = withStatement conn False "SELECT 1,'中文' as 文字,SYSDATE FROM DUAL" $ \st -> do
                       r <- executeStatement st ModeExecDefault
                       f <- fetch st
                       mapM (getQueryValue st) [1..r] >>= print
           mapM_ f [1..100]
+
+
+printErr :: DpiException -> IO a
+printErr e = print e >> throw e
