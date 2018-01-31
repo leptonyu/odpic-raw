@@ -44,7 +44,7 @@ main = hspec $ do
 
     it "Statement 1 Test" $ withContext $ \cxt -> do
       withConnection cxt username password connstr "utf-8" "utf-8" $ \conn -> do
-        st <- createStatement conn False "SELECT SYSDATE FROM DUAL"
+        st <- prepareStatement conn False "SELECT SYSDATE FROM DUAL"
         c  <- getBindCount st
         c  `shouldBe` 0
         n  <- getBindNames st

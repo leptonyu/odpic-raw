@@ -138,15 +138,15 @@ instance Storable Data_IntervalYM where
     return Data_IntervalYM {..}
 
 data Data_Timestamp  = Data_Timestamp
-  { year           :: CShort
-  , month          :: CUChar
-  , day            :: CUChar
-  , hour           :: CUChar
-  , minute         :: CUChar
-  , second         :: CUChar
-  , fsecond        :: CUInt
-  , tzHourOffset   :: CSChar
-  , tzMinuteOffset :: CSChar
+  { year           :: !CShort
+  , month          :: !CUChar
+  , day            :: !CUChar
+  , hour           :: !CUChar
+  , minute         :: !CUChar
+  , second         :: !CUChar
+  , fsecond        :: !CUInt
+  , tzHourOffset   :: !CSChar
+  , tzMinuteOffset :: !CSChar
   } deriving Show
 
 instance Storable Data_Timestamp where
@@ -526,8 +526,8 @@ instance Storable Data_ErrorInfo where
     return Data_ErrorInfo {..}
 
 data Data_ObjectAttrInfo  = Data_ObjectAttrInfo
-  { name       :: Text
-  , typeInfo   :: Data_DataTypeInfo
+  { name       :: !Text
+  , typeInfo   :: !Data_DataTypeInfo
   } deriving Show
 
 instance Storable Data_ObjectAttrInfo where
@@ -629,9 +629,9 @@ instance Storable Data_PoolCreateParams where
     return Data_PoolCreateParams {..}
 
 data Data_QueryInfo = Data_QueryInfo
-  { name       :: Text
-  , typeInfo   :: Data_DataTypeInfo
-  , nullOk     :: Bool
+  { name       :: !Text
+  , typeInfo   :: !Data_DataTypeInfo
+  , nullOk     :: !Bool
   } deriving Show
 
 instance Storable Data_QueryInfo where
