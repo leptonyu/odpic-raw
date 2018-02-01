@@ -14,12 +14,15 @@ import qualified Data.Text as T
 
 {#context prefix="dpi" #}
 
+{-# INLINE majorVersion #-}
 majorVersion :: CUInt
 majorVersion = {#const DPI_MAJOR_VERSION #}
 
+{-# INLINE minorVersion #-}
 minorVersion :: CUInt
 minorVersion = {#const DPI_MINOR_VERSION #}
 
+{-# INLINE success #-}
 success :: CInt
 success = {#const DPI_SUCCESS #}
 
@@ -337,6 +340,7 @@ data DataValue
   | DataRowid      !(Ptr DPI_Rowid)
   deriving Show
 
+{-# INLINE newData #-}
 newData :: DataValue -> IO (NativeTypeNum, PtrData)
 newData d = do
   pd <- malloc
@@ -874,6 +878,14 @@ instance Storable Data_VersionInfo where
     return Data_VersionInfo {..}
 
 -- Context 
+{-# INLINE libContextCreate                 #-}
+{-# INLINE libContextDestroy                #-}
+{-# INLINE libContextGetClientVersion       #-}
+{-# INLINE libContextInitCommonCreateParams #-}
+{-# INLINE libContextInitConnCreateParams   #-}
+{-# INLINE libContextInitPoolCreateParams   #-}
+{-# INLINE libContextInitSubscrCreateParams #-}
+{-# INLINE libContextGetError               #-}
 libContextCreate                 = {#call Context_create                 #}
 libContextDestroy                = {#call Context_destroy                #}
 libContextGetClientVersion       = {#call Context_getClientVersion       #}
@@ -884,7 +896,47 @@ libContextInitSubscrCreateParams = {#call Context_initSubscrCreateParams #}
 libContextGetError               = {#call Context_getError               #}
 
 -- Conn
-
+{-# INLINE libConnAddRef              #-}
+{-# INLINE libConnBeginDistribTrans   #-}
+{-# INLINE libConnBreakExecution      #-}
+{-# INLINE libConnChangePassword      #-}
+{-# INLINE libConnClose               #-}
+{-# INLINE libConnCommit              #-}
+{-# INLINE libConnCreate              #-}
+{-# INLINE libConnDeqObject           #-}
+{-# INLINE libConnEnqObject           #-}
+{-# INLINE libConnGetCurrentSchema    #-}
+{-# INLINE libConnGetEdition          #-}
+{-# INLINE libConnGetEncodingInfo     #-}
+{-# INLINE libConnGetExternalName     #-}
+{-# INLINE libConnGetHandle           #-}
+{-# INLINE libConnGetInternalName     #-}
+{-# INLINE libConnGetLTXID            #-}
+{-# INLINE libConnGetObjectType       #-}
+{-# INLINE libConnGetServerVersion    #-}
+{-# INLINE libConnGetStmtCacheSize    #-}
+{-# INLINE libConnNewDeqOptions       #-}
+{-# INLINE libConnNewEnqOptions       #-}
+{-# INLINE libConnNewMsgProps         #-}
+{-# INLINE libConnNewSubscription     #-}
+{-# INLINE libConnNewTempLob          #-}
+{-# INLINE libConnNewVar              #-}
+{-# INLINE libConnPing                #-}
+{-# INLINE libConnPrepareDistribTrans #-}
+{-# INLINE libConnPrepareStmt         #-}
+{-# INLINE libConnRelease             #-}
+{-# INLINE libConnRollback            #-}
+{-# INLINE libConnSetAction           #-}
+{-# INLINE libConnSetClientIdentifier #-}
+{-# INLINE libConnSetClientInfo       #-}
+{-# INLINE libConnSetCurrentSchema    #-}
+{-# INLINE libConnSetDbOp             #-}
+{-# INLINE libConnSetExternalName     #-}
+{-# INLINE libConnSetInternalName     #-}
+{-# INLINE libConnSetModule           #-}
+{-# INLINE libConnSetStmtCacheSize    #-}
+{-# INLINE libConnShutdownDatabase    #-}
+{-# INLINE libConnStartupDatabase     #-}
 libConnAddRef              = {#call Conn_addRef              #}
 libConnBeginDistribTrans   = {#call Conn_beginDistribTrans   #}
 libConnBreakExecution      = {#call Conn_breakExecution      #}
@@ -928,6 +980,30 @@ libConnShutdownDatabase    = {#call Conn_shutdownDatabase    #}
 libConnStartupDatabase     = {#call Conn_startupDatabase     #}
 
 -- Data 
+{-# INLINE libDataGetDouble     #-}
+{-# INLINE libDataGetBytes      #-}
+{-# INLINE libDataGetIntervalDS #-}
+{-# INLINE libDataGetIntervalYM #-}
+{-# INLINE libDataGetLOB        #-}
+{-# INLINE libDataGetObject     #-}
+{-# INLINE libDataGetStmt       #-}
+{-# INLINE libDataGetTimestamp  #-}
+{-# INLINE libDataGetFloat      #-}
+{-# INLINE libDataGetBool       #-}
+{-# INLINE libDataGetInt64      #-}
+{-# INLINE libDataGetUint64     #-}
+{-# INLINE libDataSetBool       #-}
+{-# INLINE libDataSetBytes      #-}
+{-# INLINE libDataSetDouble     #-}
+{-# INLINE libDataSetFloat      #-}
+{-# INLINE libDataSetInt64      #-}
+{-# INLINE libDataSetIntervalDS #-}
+{-# INLINE libDataSetIntervalYM #-}
+{-# INLINE libDataSetLOB        #-}
+{-# INLINE libDataSetObject     #-}
+{-# INLINE libDataSetStmt       #-}
+{-# INLINE libDataSetTimestamp  #-}
+{-# INLINE libDataSetUint64     #-}
 libDataGetDouble     = {#call Data_getDouble     #}
 libDataGetBytes      = {#call Data_getBytes      #}
 libDataGetIntervalDS = {#call Data_getIntervalDS #}
@@ -955,6 +1031,27 @@ libDataSetUint64     = {#call Data_setUint64     #}
 
 
 -- DeqOptions
+{-# INLINE libDeqOptionsAddRef            #-}
+{-# INLINE libDeqOptionsGetCondition      #-}
+{-# INLINE libDeqOptionsGetConsumerName   #-}
+{-# INLINE libDeqOptionsGetCorrelation    #-}
+{-# INLINE libDeqOptionsGetMode           #-}
+{-# INLINE libDeqOptionsGetMsgId          #-}
+{-# INLINE libDeqOptionsGetNavigation     #-}
+{-# INLINE libDeqOptionsGetTransformation #-}
+{-# INLINE libDeqOptionsGetVisibility     #-}
+{-# INLINE libDeqOptionsGetWait           #-}
+{-# INLINE libDeqOptionsRelease           #-}
+{-# INLINE libDeqOptionsSetCondition      #-}
+{-# INLINE libDeqOptionsSetConsumerName   #-}
+{-# INLINE libDeqOptionsSetCorrelation    #-}
+{-# INLINE libDeqOptionsSetDeliveryMode   #-}
+{-# INLINE libDeqOptionsSetMode           #-}
+{-# INLINE libDeqOptionsSetMsgId          #-}
+{-# INLINE libDeqOptionsSetNavigation     #-}
+{-# INLINE libDeqOptionsSetTransformation #-}
+{-# INLINE libDeqOptionsSetVisibility     #-}
+{-# INLINE libDeqOptionsSetWait           #-}
 libDeqOptionsAddRef            = {#call DeqOptions_addRef            #}
 libDeqOptionsGetCondition      = {#call DeqOptions_getCondition      #}
 libDeqOptionsGetConsumerName   = {#call DeqOptions_getConsumerName   #}
@@ -978,6 +1075,13 @@ libDeqOptionsSetVisibility     = {#call DeqOptions_setVisibility     #}
 libDeqOptionsSetWait           = {#call DeqOptions_setWait           #}
 
 -- EnqOptions
+{-# INLINE libEnqOptionsAddRef            #-}
+{-# INLINE libEnqOptionsGetTransformation #-}
+{-# INLINE libEnqOptionsGetVisibility     #-}
+{-# INLINE libEnqOptionsRelease           #-}
+{-# INLINE libEnqOptionsSetDeliveryMode   #-}
+{-# INLINE libEnqOptionsSetTransformation #-}
+{-# INLINE libEnqOptionsSetVisibility     #-}
 libEnqOptionsAddRef            = {#call EnqOptions_addRef            #}
 libEnqOptionsGetTransformation = {#call EnqOptions_getTransformation #}
 libEnqOptionsGetVisibility     = {#call EnqOptions_getVisibility     #}
@@ -987,6 +1091,24 @@ libEnqOptionsSetTransformation = {#call EnqOptions_setTransformation #}
 libEnqOptionsSetVisibility     = {#call EnqOptions_setVisibility     #}
 
 -- Lob
+{-# INLINE libLobAddRef                  #-}
+{-# INLINE libLobClose                   #-}
+{-# INLINE libLobCloseResource           #-}
+{-# INLINE libLobCopy                    #-}
+{-# INLINE libLobFlushBuffer             #-}
+{-# INLINE libLobGetBufferSize           #-}
+{-# INLINE libLobGetChunkSize            #-}
+{-# INLINE libLobGetDirectoryAndFileName #-}
+{-# INLINE libLobGetFileExists           #-}
+{-# INLINE libLobGetIsResourceOpen       #-}
+{-# INLINE libLobGetSize                 #-}
+{-# INLINE libLobOpenResource            #-}
+{-# INLINE libLobReadBytes               #-}
+{-# INLINE libLobRelease                 #-}
+{-# INLINE libLobSetDirectoryAndFileName #-}
+{-# INLINE libLobSetFromBytes            #-}
+{-# INLINE libLobTrim                    #-}
+{-# INLINE libLobWriteBytes              #-}
 libLobAddRef                  = {#call Lob_addRef                  #}
 libLobClose                   = {#call Lob_close                   #}
 libLobCloseResource           = {#call Lob_closeResource           #}
@@ -1007,6 +1129,24 @@ libLobTrim                    = {#call Lob_trim                    #}
 libLobWriteBytes              = {#call Lob_writeBytes              #}
 
 -- MsgProps
+{-# INLINE libMsgPropsAddRef           #-}
+{-# INLINE libMsgPropsGetCorrelation   #-}
+{-# INLINE libMsgPropsGetDelay         #-}
+{-# INLINE libMsgPropsGetDeliveryMode  #-}
+{-# INLINE libMsgPropsGetEnqTime       #-}
+{-# INLINE libMsgPropsGetExceptionQ    #-}
+{-# INLINE libMsgPropsGetExpiration    #-}
+{-# INLINE libMsgPropsGetNumAttempts   #-}
+{-# INLINE libMsgPropsGetOriginalMsgId #-}
+{-# INLINE libMsgPropsGetPriority      #-}
+{-# INLINE libMsgPropsGetState         #-}
+{-# INLINE libMsgPropsRelease          #-}
+{-# INLINE libMsgPropsSetCorrelation   #-}
+{-# INLINE libMsgPropsSetDelay         #-}
+{-# INLINE libMsgPropsSetExceptionQ    #-}
+{-# INLINE libMsgPropsSetExpiration    #-}
+{-# INLINE libMsgPropsSetOriginalMsgId #-}
+{-# INLINE libMsgPropsSetPriority      #-}
 libMsgPropsAddRef           = {#call MsgProps_addRef           #}
 libMsgPropsGetCorrelation   = {#call MsgProps_getCorrelation   #}
 libMsgPropsGetDelay         = {#call MsgProps_getDelay         #}
@@ -1027,6 +1167,22 @@ libMsgPropsSetOriginalMsgId = {#call MsgProps_setOriginalMsgId #}
 libMsgPropsSetPriority      = {#call MsgProps_setPriority      #}
 
 -- Object
+{-# INLINE libObjectAddRef                  #-}
+{-# INLINE libObjectAppendElement           #-}
+{-# INLINE libObjectCopy                    #-}
+{-# INLINE libObjectDeleteElementByIndex    #-}
+{-# INLINE libObjectGetAttributeValue       #-}
+{-# INLINE libObjectGetElementExistsByIndex #-}
+{-# INLINE libObjectGetElementValueByIndex  #-}
+{-# INLINE libObjectGetFirstIndex           #-}
+{-# INLINE libObjectGetLastIndex            #-}
+{-# INLINE libObjectGetNextIndex            #-}
+{-# INLINE libObjectGetPrevIndex            #-}
+{-# INLINE libObjectGetSize                 #-}
+{-# INLINE libObjectRelease                 #-}
+{-# INLINE libObjectSetAttributeValue       #-}
+{-# INLINE libObjectSetElementValueByIndex  #-}
+{-# INLINE libObjectTrim                    #-}
 libObjectAddRef                  = {#call Object_addRef                  #}
 libObjectAppendElement           = {#call Object_appendElement           #}
 libObjectCopy                    = {#call Object_copy                    #}
@@ -1045,11 +1201,19 @@ libObjectSetElementValueByIndex  = {#call Object_setElementValueByIndex  #}
 libObjectTrim                    = {#call Object_trim                    #}
 
 -- ObjectAttr
+{-# INLINE libObjectAttrAddRef  #-}
+{-# INLINE libObjectAttrGetInfo #-}
+{-# INLINE libObjectAttrRelease #-}
 libObjectAttrAddRef  = {#call ObjectAttr_addRef  #}
 libObjectAttrGetInfo = {#call ObjectAttr_getInfo #}
 libObjectAttrRelease = {#call ObjectAttr_release #}
 
 -- ObjectType
+{-# INLINE libObjectTypeAddRef        #-}
+{-# INLINE libObjectTypeCreateObject  #-}
+{-# INLINE libObjectTypeGetAttributes #-}
+{-# INLINE libObjectTypeGetInfo       #-}
+{-# INLINE libObjectTypeRelease       #-}
 libObjectTypeAddRef        = {#call ObjectType_addRef        #}
 libObjectTypeCreateObject  = {#call ObjectType_createObject  #}
 libObjectTypeGetAttributes = {#call ObjectType_getAttributes #}
@@ -1057,6 +1221,22 @@ libObjectTypeGetInfo       = {#call ObjectType_getInfo       #}
 libObjectTypeRelease       = {#call ObjectType_release       #}
 
 -- Pool
+{-# INLINE libPoolAcquireConnection     #-}
+{-# INLINE libPoolAddRef                #-}
+{-# INLINE libPoolClose                 #-}
+{-# INLINE libPoolCreate                #-}
+{-# INLINE libPoolGetBusyCount          #-}
+{-# INLINE libPoolGetEncodingInfo       #-}
+{-# INLINE libPoolGetGetMode            #-}
+{-# INLINE libPoolGetMaxLifetimeSession #-}
+{-# INLINE libPoolGetOpenCount          #-}
+{-# INLINE libPoolGetStmtCacheSize      #-}
+{-# INLINE libPoolGetTimeout            #-}
+{-# INLINE libPoolRelease               #-}
+{-# INLINE libPoolSetGetMode            #-}
+{-# INLINE libPoolSetMaxLifetimeSession #-}
+{-# INLINE libPoolSetStmtCacheSize      #-}
+{-# INLINE libPoolSetTimeout            #-}
 libPoolAcquireConnection     = {#call Pool_acquireConnection     #}
 libPoolAddRef                = {#call Pool_addRef                #}
 libPoolClose                 = {#call Pool_close                 #}
@@ -1075,6 +1255,34 @@ libPoolSetStmtCacheSize      = {#call Pool_setStmtCacheSize      #}
 libPoolSetTimeout            = {#call Pool_setTimeout            #}
 
 -- Stmt
+{-# INLINE libStmtAddRef             #-}
+{-# INLINE libStmtBindByName         #-}
+{-# INLINE libStmtBindByPos          #-}
+{-# INLINE libStmtBindValueByName    #-}
+{-# INLINE libStmtBindValueByPos     #-}
+{-# INLINE libStmtClose              #-}
+{-# INLINE libStmtDefine             #-}
+{-# INLINE libStmtDefineValue        #-}
+{-# INLINE libStmtExecute            #-}
+{-# INLINE libStmtExecuteMany        #-}
+{-# INLINE libStmtFetch              #-}
+{-# INLINE libStmtFetchRows          #-}
+{-# INLINE libStmtGetBatchErrorCount #-}
+{-# INLINE libStmtGetBatchErrors     #-}
+{-# INLINE libStmtGetBindCount       #-}
+{-# INLINE libStmtGetBindNames       #-}
+{-# INLINE libStmtGetFetchArraySize  #-}
+{-# INLINE libStmtGetImplicitResult  #-}
+{-# INLINE libStmtGetInfo            #-}
+{-# INLINE libStmtGetNumQueryColumns #-}
+{-# INLINE libStmtGetQueryInfo       #-}
+{-# INLINE libStmtGetQueryValue      #-}
+{-# INLINE libStmtGetRowCount        #-}
+{-# INLINE libStmtGetRowCounts       #-}
+{-# INLINE libStmtGetSubscrQueryId   #-}
+{-# INLINE libStmtRelease            #-}
+{-# INLINE libStmtScroll             #-}
+{-# INLINE libStmtSetFetchArraySize  #-}
 libStmtAddRef             = {#call Stmt_addRef             #}
 libStmtBindByName         = {#call Stmt_bindByName         #}
 libStmtBindByPos          = {#call Stmt_bindByPos          #}
@@ -1105,17 +1313,36 @@ libStmtScroll             = {#call Stmt_scroll             #}
 libStmtSetFetchArraySize  = {#call Stmt_setFetchArraySize  #}
 
 -- RowId
+{-# INLINE libRowidAddRef         #-}
+{-# INLINE libRowidGetStringValue #-}
+{-# INLINE libRowidRelease        #-}
 libRowidAddRef         = {#call Rowid_addRef         #}
 libRowidGetStringValue = {#call Rowid_getStringValue #}
 libRowidRelease        = {#call Rowid_release        #}
 
 -- Subscr
+{-# INLINE libSubscrAddRef      #-}
+{-# INLINE libSubscrClose       #-}
+{-# INLINE libSubscrPrepareStmt #-}
+{-# INLINE libSubscrRelease     #-}
 libSubscrAddRef      = {#call Subscr_addRef      #}
 libSubscrClose       = {#call Subscr_close       #}
 libSubscrPrepareStmt = {#call Subscr_prepareStmt #}
 libSubscrRelease     = {#call Subscr_release     #}
 
 -- Var
+{-# INLINE libVarAddRef                #-}
+{-# INLINE libVarCopyData              #-}
+{-# INLINE libVarGetData               #-}
+{-# INLINE libVarGetNumElementsInArray #-}
+{-# INLINE libVarGetSizeInBytes        #-}
+{-# INLINE libVarRelease               #-}
+{-# INLINE libVarSetFromBytes          #-}
+{-# INLINE libVarSetFromLob            #-}
+{-# INLINE libVarSetFromObject         #-}
+{-# INLINE libVarSetFromRowid          #-}
+{-# INLINE libVarSetFromStmt           #-}
+{-# INLINE libVarSetNumElementsInArray #-}
 libVarAddRef                = {#call Var_addRef                #}
 libVarCopyData              = {#call Var_copyData              #}
 libVarGetData               = {#call Var_getData               #}

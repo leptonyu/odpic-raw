@@ -1,4 +1,4 @@
-resolver: lts-10.1
+resolver: lts-10.4
 packages:
 - .
 extra-include-dirs:
