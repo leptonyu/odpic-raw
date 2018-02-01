@@ -1,6 +1,6 @@
 # odpic-raw
 
-[![Hackage](https://img.shields.io/badge/hackage-v0.1.9-orange.svg)](https://hackage.haskell.org/package/odpic-raw)
+[![Hackage](https://img.shields.io/badge/hackage-v0.1.10-orange.svg)](https://hackage.haskell.org/package/odpic-raw)
 
 
 Haskell raw bindings to [Oracle ODPI-C Library](https://github.com/oracle/odpi)
@@ -38,7 +38,7 @@ this project is not in stackage yet, please add `extra-deps` in `stack.yaml` con
 
 ```
 extra-deps:
-  - odpic-raw-0.1.9
+  - odpic-raw-0.1.10
 ```
 
 More Documents:
