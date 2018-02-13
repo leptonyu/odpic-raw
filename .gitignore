@@ -29,5 +29,6 @@ sql
 pgdata
 report.html
 allegro-raw
+persistent-oracle
 
 # End of https://www.gitignore.io/api/haskell

@@ -5,6 +5,12 @@ import           Test.Hspec
 import           Test.QuickCheck
 
 import           Database.Dpi
+import           Database.Oracle
+
+import           Control.Monad.Logger (NoLoggingT, runNoLoggingT)
+import           Data.Acquire         (with)
+import           Data.Conduit
+import qualified Data.Conduit.List    as CL
 
 -- define this 3 parameters before run test
 username = "username"
@@ -98,7 +104,13 @@ main = hspec $ do
                       r <- executeStatement st ModeExecDefault
                       f <- fetch st
                       mapM (getQueryValue st) [1..r] >>= print
-          mapM_ f [1..100]
+          mapM_ f [1..2]
+          v <- queryByPage conn "SELECT DBTIMEZONE,CURRENT_DATE,CURRENT_TIMESTAMP,SYSDATE,SYSTIMESTAMP FROM dual" [] (0,1)
+          print (v :: [DataColumn])
+    -- let runPool f = withContext $ \cxt -> withPool cxt username password connstr "utf-8" "utf-8" 2 $ \pool -> withPoolConnection pool f
+    -- it "Value 1 Test" $ runPool $ \conn -> do
+    --   v <- queryByPage conn "SELECT CURRENT_DATE,CURRENT_TIMESTAMP,SYSDATE,SYSTIMESTAMP FROM dual" [] (0,1)
+    --   print (v :: [DataColumn])
 
 
 printErr :: DpiException -> IO a

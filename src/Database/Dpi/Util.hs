@@ -5,6 +5,7 @@
 {-# LANGUAGE InstanceSigs           #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE OverloadedStrings      #-}
+{-# LANGUAGE RankNTypes             #-}
 {-# LANGUAGE TupleSections          #-}
 {-# LANGUAGE UndecidableInstances   #-}
 module Database.Dpi.Util where
@@ -34,20 +35,14 @@ instance Storable a => WithPtrs (Ptr a) where
 instance (WithPtrs a, WithPtrs b) => WithPtrs (a, b) where
   withPtrs f = withPtrs $ \a -> withPtrs $ \b -> f (a,b)
 
-class HasMonad m r | r -> m where
-  app :: m a -> (a -> r) -> r
-  unM :: m r -> r
-  unM ma = app ma id
+class Monad m => Return m r | r -> m where
+  re :: m r -> r
 
-instance Monad m => HasMonad m (m a) where
-  app = (>>=)
+instance Monad m => Return m (m a) where
+  re = join
 
-instance (HasMonad m r) => HasMonad m (a -> r) where
-  app mb f = app mb . flip f
-
-{-# INLINE inVar #-}
-inVar :: a -> (a -> r) -> r
-inVar = (&)
+instance (Monad m, Return m r) => Return m (b -> r) where
+  re f b = re $ (b &) <$> f
 
 class ToString s where
   toString :: s -> String
@@ -58,13 +53,21 @@ instance ToString String where
 instance ToString Text where
    toString = T.unpack
 
+{-# INLINE inVar #-}
+inVar :: a -> (a -> r) -> r
+inVar = (&)
+
+{-# INLINE inCxtPtr #-}
+inCxtPtr :: HasCxtPtr p -> (Ptr p -> r) -> r
+inCxtPtr (cxt,p) f = f $ p
+
 {-# INLINE inStr #-}
-inStr :: (HasMonad IO r, ToString s) => s -> (CString -> r) -> r
-inStr !text f = unM $ withCString (toString text) (return . f)
+inStr :: (Return IO r, ToString s) => s -> (CString -> r) -> r
+inStr !text f = re $ withCString (toString text) (return . f)
 
 {-# INLINE inStrLen #-}
-inStrLen :: (HasMonad IO r, ToString s, Integral n) => s -> (Ptr CChar -> n -> r) -> r
-inStrLen !text f = unM $ withCStringLen (toString text) $ \(c,clen) -> return $ f c (fromIntegral clen)
+inStrLen :: (Return IO r, ToString s, Integral n) => s -> (Ptr CChar -> n -> r) -> r
+inStrLen !text f = re $ withCStringLen (toString text) $ \(c,clen) -> return $ f c (fromIntegral clen)
 
 {-# INLINE inInt #-}
 inInt :: (Num n, Integral i) => i -> (n -> r) -> r
@@ -79,8 +82,8 @@ inBool :: Integral n => Bool -> (n -> r) -> r
 inBool !b f = f $ fromBool b
 
 {-# INLINE inPtr #-}
-inPtr :: (HasMonad IO r, Storable a) => (Ptr a -> IO b) -> (Ptr a -> r) -> r
-inPtr init f = unM $ withPtrs $ \c -> init c >> return (f c)
+inPtr :: (Return IO r, Storable a) => (Ptr a -> IO b) -> (Ptr a -> r) -> r
+inPtr init f = re $ withPtrs $ \c -> init c >> return (f c)
 
 {-# INLINE outBool #-}
 outBool :: IO CInt -> IO Bool
@@ -144,6 +147,10 @@ out4Value cxt f g = outValue cxt f (go g)
     {-# INLINE go #-}
     go f ((x,y),(z,w)) = f x y z w
 
+{-# INLINE outCxtPtr #-}
+outCxtPtr :: HasCxtPtr b -> (Ptr (Ptr a) -> IO CInt) -> IO (HasCxtPtr a)
+outCxtPtr (cxt,_) = outValue cxt (peekWithCxt cxt)
+
 {-# INLINE runBool #-}
 runBool :: (Ptr a -> IO CInt) -> (PtrContext, Ptr a) -> IO Bool
 runBool f (_, !p) = isOk <$> f p
@@ -152,9 +159,9 @@ runBool f (_, !p) = isOk <$> f p
 runInt :: (Storable i, Integral i, Integral n) => (Ptr a -> Ptr i -> IO CInt) -> HasCxtPtr a -> IO n
 runInt f !p = fromIntegral <$> runVar f p
 
-{-# INLINE runMaybeInt #-}
-runMaybeInt :: (Storable i, Integral i, Integral n) => (Ptr a -> Ptr i -> IO CInt) -> HasCxtPtr a -> IO (Maybe n)
-runMaybeInt f !p = fmap fromIntegral <$> runMaybeVar f p
+{-# INLINE rreaybeInt #-}
+rreaybeInt :: (Storable i, Integral i, Integral n) => (Ptr a -> Ptr i -> IO CInt) -> HasCxtPtr a -> IO (Maybe n)
+rreaybeInt f !p = fmap fromIntegral <$> runMaybeVar f p
 
 {-# INLINE runText #-}
 runText :: (Ptr a -> Ptr (Ptr CChar) -> Ptr CUInt -> IO CInt) -> HasCxtPtr a -> IO Text
@@ -190,8 +197,13 @@ peekEnum !p = te <$> peek p
 peekCStrLen :: (Ptr (Ptr CChar), Ptr CUInt) -> IO Text
 peekCStrLen (!p,!plen) = join $ ts <$> peek p <*> peek plen
 
+{-# INLINE peekMaybeCStrLen #-}
+peekMaybeCStrLen :: (Ptr (Ptr CChar), Ptr CUInt) -> IO (Maybe Text)
+peekMaybeCStrLen ps@(p,_) | p == nullPtr = return Nothing
+                          | otherwise    = Just <$> peekCStrLen ps
+
 {-# INLINE _get #-}
-_get :: NativeTypeNum -> PtrData -> IO DataValue
-_get !t !p = do
+_get :: OracleTypeNum -> NativeTypeNum -> PtrData -> IO DataValue
+_get !ot !t !p = do
   Data !get <- peek p
-  get t
+  get t ot

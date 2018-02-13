@@ -9,6 +9,8 @@ module Database.Dpi.Internal where
 import Control.Exception
 import Database.Dpi.Prelude 
 import qualified Data.Text as T
+import qualified Data.Text.Lazy as L
+import Data.Time
 
 #include <dpi.h>
 
@@ -27,29 +29,29 @@ success :: CInt
 success = {#const DPI_SUCCESS #}
 
 -- Enum
-{#enum AuthMode            as ^ {underscoreToCase} deriving (Show) #}
-{#enum ConnCloseMode       as ^ {underscoreToCase} deriving (Show) #}
-{#enum CreateMode          as ^ {underscoreToCase} deriving (Show) #}
-{#enum DeqMode             as ^ {underscoreToCase} deriving (Show) #}
-{#enum DeqNavigation       as ^ {underscoreToCase} deriving (Show) #}
-{#enum EventType           as ^ {underscoreToCase} deriving (Show) #}
-{#enum ExecMode            as ^ {underscoreToCase} deriving (Show) #}
-{#enum FetchMode           as ^ {underscoreToCase} deriving (Show) #}
-{#enum MessageDeliveryMode as ^ {underscoreToCase} deriving (Show) #}
-{#enum MessageState        as ^ {underscoreToCase} deriving (Show) #}
-{#enum NativeTypeNum       as ^ {underscoreToCase} deriving (Show) #}
-{#enum OpCode              as ^ {underscoreToCase} deriving (Show) #}
-{#enum OracleTypeNum       as ^ {underscoreToCase} deriving (Show) #}
-{#enum PoolCloseMode       as ^ {underscoreToCase} deriving (Show) #}
-{#enum PoolGetMode         as ^ {underscoreToCase} deriving (Show) #}
-{#enum Purity              as ^ {underscoreToCase} deriving (Show) #}
-{#enum ShutdownMode        as ^ {underscoreToCase} deriving (Show) #}
-{#enum StartupMode         as ^ {underscoreToCase} deriving (Show) #}
-{#enum StatementType       as ^ {underscoreToCase} deriving (Show) #}
-{#enum SubscrNamespace     as ^ {underscoreToCase} deriving (Show) #}
-{#enum SubscrProtocol      as ^ {underscoreToCase} deriving (Show) #}
-{#enum SubscrQOS           as ^ {underscoreToCase} deriving (Show) #}
-{#enum Visibility          as ^ {underscoreToCase} deriving (Show) #}
+{#enum AuthMode            as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum ConnCloseMode       as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum CreateMode          as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum DeqMode             as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum DeqNavigation       as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum EventType           as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum ExecMode            as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum FetchMode           as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum MessageDeliveryMode as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum MessageState        as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum NativeTypeNum       as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum OpCode              as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum OracleTypeNum       as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum PoolCloseMode       as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum PoolGetMode         as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum Purity              as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum ShutdownMode        as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum StartupMode         as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum StatementType       as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum SubscrNamespace     as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum SubscrProtocol      as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum SubscrQOS           as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum Visibility          as ^ {underscoreToCase} deriving (Eq, Show) #}
 
 -- Handler 
 {#pointer *Conn       as DPI_Conn       foreign newtype #}
@@ -91,7 +93,7 @@ type PtrContext    = Ptr DPI_Context
 {#pointer *Timestamp  as Ptr_Timestamp  -> Data_Timestamp  #}
 
 data Data_Bytes = Data_Bytes
-  { bytes    :: CStringLen
+  { bytes    :: L.Text
   , encoding :: Text
   } deriving Show
 
@@ -103,7 +105,7 @@ instance Storable Data_Bytes where
     ptr      <- {#get Bytes -> ptr      #} p
     length   <- {#get Bytes -> length   #} p
     encoding <- {#get Bytes -> encoding #} p >>= tb
-    let bytes = (ptr, fromIntegral length)
+    bytes    <- L.pack <$> peekCStringLen (ptr, fromIntegral length)
     return Data_Bytes {..}
 
 data Data_IntervalDS = Data_IntervalDS
@@ -329,9 +331,10 @@ data DataValue
   | DataUint64     !Word64
   | DataFloat      !CFloat
   | DataDouble     !CDouble
-  | DataBytes      !Data_Bytes
-  | DataTimestamp  !Data_Timestamp
-  | DataIntervalDs !Data_IntervalDS
+  | DataText       !Text
+  | DataLocalTime  !LocalTime
+  | DataTimestamp  !UTCTime
+  | DataIntervalDs !DiffTime
   | DataIntervalYm !Data_IntervalYM
   | DataLob        !(Ptr DPI_Lob)
   | DataObject     !(Ptr DPI_Object)
@@ -341,35 +344,39 @@ data DataValue
   deriving Show
 
 {-# INLINE newData #-}
-newData :: DataValue -> IO (NativeTypeNum, PtrData)
+newData :: DataValue -> IO (NativeTypeNum, OracleTypeNum, PtrData)
 newData d = do
   pd <- malloc
-  let tp = go d
-  poke pd (Data $ \_ -> return d)
-  return (tp, pd)
+  let (tp,ot) = go d
+  poke pd (Data $ \_ _ -> return d)
+  return (tp, ot, pd)
   where
-    go (DataNull       t) = t
-    go (DataInt64      _) = NativeTypeInt64
-    go (DataUint64     _) = NativeTypeUint64
-    go (DataFloat      _) = NativeTypeFloat
-    go (DataDouble     _) = NativeTypeDouble
-    go (DataBytes      _) = NativeTypeBytes
-    go (DataTimestamp  _) = NativeTypeTimestamp
-    go (DataIntervalDs _) = NativeTypeIntervalDs
-    go (DataIntervalYm _) = NativeTypeIntervalYm
-    go (DataLob        _) = NativeTypeLob
-    go (DataObject     _) = NativeTypeObject
-    go (DataStmt       _) = NativeTypeStmt
-    go (DataBoolean    _) = NativeTypeBoolean
-    go (DataRowid      _) = NativeTypeRowid
+    go (DataNull       t) = (t,                    OracleTypeNone         )
+    go (DataInt64      _) = (NativeTypeInt64,      OracleTypeNativeInt    )
+    go (DataUint64     _) = (NativeTypeUint64,     OracleTypeNativeUint   )
+    go (DataFloat      _) = (NativeTypeFloat,      OracleTypeNativeFloat  )
+    go (DataDouble     _) = (NativeTypeDouble,     OracleTypeNativeDouble )
+    go (DataText       _) = (NativeTypeBytes,      OracleTypeVarchar      )
+    go (DataLocalTime  _) = (NativeTypeTimestamp,  OracleTypeTimestamp    )
+    go (DataTimestamp  _) = (NativeTypeTimestamp,  OracleTypeTimestampTz  )
+    go (DataIntervalDs _) = (NativeTypeIntervalDs, OracleTypeIntervalDs   )
+    go (DataIntervalYm _) = (NativeTypeIntervalYm, OracleTypeIntervalYm   )
+    go (DataLob        _) = (NativeTypeLob,        OracleTypeClob         )
+    go (DataObject     _) = (NativeTypeObject,     OracleTypeObject       )
+    go (DataStmt       _) = (NativeTypeStmt,       OracleTypeStmt         )
+    go (DataBoolean    _) = (NativeTypeBoolean,    OracleTypeBoolean      )
+    go (DataRowid      _) = (NativeTypeRowid,      OracleTypeRowid        )
 
-newtype Data = Data (NativeTypeNum -> IO DataValue)
+newtype Data = Data (NativeTypeNum -> OracleTypeNum -> IO DataValue)
+
+picoResolution :: Integer
+picoResolution = 10 ^ 12
 
 instance Storable Data where
   sizeOf    _ = {#sizeof  Data #}
   alignment _ = {#alignof Data #}
   poke      p (Data f) = do
-    d <- f NativeTypeBoolean
+    d <- f NativeTypeBoolean OracleTypeBoolean
     go p d
     where
       go p (DataNull       _) = {#set Data -> isNull             #} p 1
@@ -377,28 +384,53 @@ instance Storable Data where
       go p (DataUint64     v) = {#set Data -> value.asUint64     #} p (fromIntegral v)
       go p (DataFloat      v) = {#set Data -> value.asFloat      #} p v
       go p (DataDouble     v) = {#set Data -> value.asDouble     #} p v
-      go p (DataBytes      (Data_Bytes {..})) = do
-        let (b,bl) = bytes
-        e      <- fs encoding
+      go p (DataText       v) = do
+        (b,bl) <- newCStringLen $ T.unpack v
+        e      <- fs "UTF-8"
         {#set Data -> value.asBytes.ptr      #} p b
         {#set Data -> value.asBytes.length   #} p (fromIntegral bl)
         {#set Data -> value.asBytes.encoding #} p e
-      go p (DataTimestamp  (Data_Timestamp {..})) = do
-        {#set Data -> value.asTimestamp.year           #} p year          
-        {#set Data -> value.asTimestamp.month          #} p month         
-        {#set Data -> value.asTimestamp.day            #} p day           
-        {#set Data -> value.asTimestamp.hour           #} p hour          
-        {#set Data -> value.asTimestamp.minute         #} p minute        
-        {#set Data -> value.asTimestamp.second         #} p second        
-        {#set Data -> value.asTimestamp.fsecond        #} p fsecond       
-        {#set Data -> value.asTimestamp.tzHourOffset   #} p tzHourOffset  
-        {#set Data -> value.asTimestamp.tzMinuteOffset #} p tzMinuteOffset
-      go p (DataIntervalDs (Data_IntervalDS {..})) = do
-        {#set Data -> value.asIntervalDS.days     #} p days    
-        {#set Data -> value.asIntervalDS.hours    #} p hours   
-        {#set Data -> value.asIntervalDS.minutes  #} p minutes 
-        {#set Data -> value.asIntervalDS.seconds  #} p seconds 
-        {#set Data -> value.asIntervalDS.fseconds #} p fseconds
+      go p (DataTimestamp UTCTime{..}) = do
+        let (year, month, day) = toGregorian utctDay
+            fs                 = diffTimeToPicoseconds utctDayTime
+            (t1,fsecond)       = fs `divMod` picoResolution
+            (t2,second)        = t1 `divMod` 60
+            (hour,minute)      = t2 `divMod` 60
+        {#set Data -> value.asTimestamp.year           #} p $ fromIntegral year          
+        {#set Data -> value.asTimestamp.month          #} p $ fromIntegral month         
+        {#set Data -> value.asTimestamp.day            #} p $ fromIntegral day           
+        {#set Data -> value.asTimestamp.hour           #} p $ fromIntegral hour          
+        {#set Data -> value.asTimestamp.minute         #} p $ fromIntegral minute        
+        {#set Data -> value.asTimestamp.second         #} p $ fromIntegral second        
+        {#set Data -> value.asTimestamp.fsecond        #} p $ fromIntegral fsecond       
+        {#set Data -> value.asTimestamp.tzHourOffset   #} p 0  
+        {#set Data -> value.asTimestamp.tzMinuteOffset #} p 0
+      go p (DataLocalTime LocalTime{..}) = do
+        let (year, month, day) = toGregorian localDay
+            fs                 = diffTimeToPicoseconds $ timeOfDayToTime localTimeOfDay
+            (t1,fsecond)       = fs `divMod` picoResolution
+            (t2,second)        = t1 `divMod` 60
+            (hour,minute)      = t2 `divMod` 60
+        {#set Data -> value.asTimestamp.year           #} p $ fromIntegral year          
+        {#set Data -> value.asTimestamp.month          #} p $ fromIntegral month         
+        {#set Data -> value.asTimestamp.day            #} p $ fromIntegral day           
+        {#set Data -> value.asTimestamp.hour           #} p $ fromIntegral hour          
+        {#set Data -> value.asTimestamp.minute         #} p $ fromIntegral minute        
+        {#set Data -> value.asTimestamp.second         #} p $ fromIntegral second        
+        {#set Data -> value.asTimestamp.fsecond        #} p $ fromIntegral fsecond       
+        {#set Data -> value.asTimestamp.tzHourOffset   #} p 0  
+        {#set Data -> value.asTimestamp.tzMinuteOffset #} p 0
+      go p (DataIntervalDs v) = do
+        let fs                 = diffTimeToPicoseconds v
+            (t1,fseconds)      = fs `divMod` picoResolution
+            (t2,seconds)       = t1 `divMod` 60
+            (t3,minutes)       = t2 `divMod` 60
+            (days,hours)       = t3 `divMod` 24
+        {#set Data -> value.asIntervalDS.days     #} p $ fromIntegral days    
+        {#set Data -> value.asIntervalDS.hours    #} p $ fromIntegral hours   
+        {#set Data -> value.asIntervalDS.minutes  #} p $ fromIntegral minutes 
+        {#set Data -> value.asIntervalDS.seconds  #} p $ fromIntegral seconds 
+        {#set Data -> value.asIntervalDS.fseconds #} p $ fromIntegral fseconds
       go p (DataIntervalYm (Data_IntervalYM {..})) = do
         {#set Data -> value.asIntervalYM.years    #} p  years 
         {#set Data -> value.asIntervalYM.months   #} p  months
@@ -409,22 +441,21 @@ instance Storable Data where
       go p (DataBoolean    v) = {#set Data -> value.asBoolean    #} p (fromBool v)
   peek      p = return $ Data $ go' p
     where
-      go' p t = do
+      go' p t ot = do
         isNull <- toBool <$> {#get Data -> isNull #} p
         if isNull 
           then return $ DataNull t
-          else go p t
-      go p NativeTypeInt64      = (DataInt64  .fromInteger.toInteger) <$> {#get Data -> value.asInt64      #} p
-      go p NativeTypeUint64     = (DataUint64 .fromInteger.toInteger) <$> {#get Data -> value.asUint64     #} p
-      go p NativeTypeFloat      = DataFloat      <$> {#get Data -> value.asFloat      #} p
-      go p NativeTypeDouble     = DataDouble     <$> {#get Data -> value.asDouble     #} p
-      go p NativeTypeBytes      = DataBytes      <$> do
+          else go p t ot
+      go p NativeTypeInt64      _ = (DataInt64  .fromInteger.toInteger) <$> {#get Data -> value.asInt64      #} p
+      go p NativeTypeUint64     _ = (DataUint64 .fromInteger.toInteger) <$> {#get Data -> value.asUint64     #} p
+      go p NativeTypeFloat      _ = DataFloat      <$> {#get Data -> value.asFloat      #} p
+      go p NativeTypeDouble     _ = DataDouble     <$> {#get Data -> value.asDouble     #} p
+      go p NativeTypeBytes      _ = DataText       <$> do
         ptr      <- {#get Data -> value.asBytes.ptr      #} p
         length   <- {#get Data -> value.asBytes.length   #} p
         encoding <- {#get Data -> value.asBytes.encoding #} p >>= tb
-        let bytes = (ptr, fromIntegral length)
-        return Data_Bytes {..}
-      go p NativeTypeTimestamp  = DataTimestamp  <$> do
+        T.pack <$> peekCStringLen (ptr, fromIntegral length)
+      go p NativeTypeTimestamp  t = do
         year           <- {#get Data -> value.asTimestamp.year           #} p
         month          <- {#get Data -> value.asTimestamp.month          #} p
         day            <- {#get Data -> value.asTimestamp.day            #} p
@@ -434,23 +465,23 @@ instance Storable Data where
         fsecond        <- {#get Data -> value.asTimestamp.fsecond        #} p
         tzHourOffset   <- {#get Data -> value.asTimestamp.tzHourOffset   #} p
         tzMinuteOffset <- {#get Data -> value.asTimestamp.tzMinuteOffset #} p
-        return Data_Timestamp {..}
-      go p NativeTypeIntervalDs = DataIntervalDs <$> do
+        return $ toTime t Data_Timestamp{..}
+      go p NativeTypeIntervalDs t = DataIntervalDs <$> do
         days     <- {#get Data -> value.asIntervalDS.days     #} p
         hours    <- {#get Data -> value.asIntervalDS.hours    #} p
         minutes  <- {#get Data -> value.asIntervalDS.minutes  #} p
         seconds  <- {#get Data -> value.asIntervalDS.seconds  #} p
         fseconds <- {#get Data -> value.asIntervalDS.fseconds #} p
-        return Data_IntervalDS {..}
-      go p NativeTypeIntervalYm = DataIntervalYm <$> do
+        return $ picosecondsToDiffTime $ (fromIntegral days * 24 * 3600 + fromIntegral hours * 3600 + fromIntegral minutes * 60 + fromIntegral seconds) * picoResolution + fromIntegral fseconds
+      go p NativeTypeIntervalYm t = DataIntervalYm <$> do
         years    <- {#get Data -> value.asIntervalYM.years    #} p
         months   <- {#get Data -> value.asIntervalYM.months   #} p
         return Data_IntervalYM {..}
-      go p NativeTypeLob        = DataLob        <$> {#get Data -> value.asLOB        #} p
-      go p NativeTypeObject     = DataObject     <$> {#get Data -> value.asObject     #} p
-      go p NativeTypeStmt       = DataStmt       <$> {#get Data -> value.asStmt       #} p
-      go p NativeTypeRowid      = DataRowid      <$> {#get Data -> value.asRowid      #} p
-      go p NativeTypeBoolean    = (DataBoolean .toBool)<$> {#get Data -> value.asBoolean    #} p
+      go p NativeTypeLob        _ = DataLob        <$> {#get Data -> value.asLOB        #} p
+      go p NativeTypeObject     _ = DataObject     <$> {#get Data -> value.asObject     #} p
+      go p NativeTypeStmt       _ = DataStmt       <$> {#get Data -> value.asStmt       #} p
+      go p NativeTypeRowid      _ = DataRowid      <$> {#get Data -> value.asRowid      #} p
+      go p NativeTypeBoolean    _ = (DataBoolean .toBool)<$> {#get Data -> value.asBoolean    #} p
 
 data Data_DataTypeInfo  = Data_DataTypeInfo
   { oracleTypeNum        :: !OracleTypeNum
@@ -481,6 +512,18 @@ instance Storable Data_DataTypeInfo where
     fsPrecision          <- {#get DataTypeInfo -> fsPrecision          #} p
     objectType           <- {#get DataTypeInfo -> objectType           #} p
     return Data_DataTypeInfo {..}
+
+{-# INLINE toTime #-}
+toTime :: OracleTypeNum -> Data_Timestamp -> DataValue
+toTime t Data_Timestamp{..} 
+  | t == OracleTypeTimestamp || t == OracleTypeDate =
+    let localDay       = fromGregorian (fromIntegral year) (fromIntegral month) (fromIntegral day)
+        localTimeOfDay = timeToTimeOfDay $ picosecondsToDiffTime $ (fromIntegral hour * 3600 + fromIntegral minute * 60 + fromIntegral second) * picoResolution + fromIntegral fsecond
+    in DataLocalTime LocalTime {..}
+  | otherwise =
+    let utctDay     = fromGregorian (fromIntegral year) (fromIntegral month) (fromIntegral day)
+        utctDayTime = picosecondsToDiffTime $ ((fromIntegral hour - fromIntegral tzHourOffset) * 3600 + (fromIntegral minute - fromIntegral tzMinuteOffset) * 60 + fromIntegral second) * picoResolution + fromIntegral fsecond
+    in DataTimestamp UTCTime {..}
 
 
 data Data_EncodingInfo  = Data_EncodingInfo
@@ -674,20 +717,19 @@ instance Storable Data_ShardingKeyColumn where
   peek      p = do
     oracleTypeNum <- te      <$> {#get ShardingKeyColumn -> oracleTypeNum #} p
     nativeTypeNum <- te      <$> {#get ShardingKeyColumn -> nativeTypeNum #} p
-    value         <- go p nativeTypeNum
+    value         <- go p nativeTypeNum oracleTypeNum
     return Data_ShardingKeyColumn {..}
     where
-      go p NativeTypeInt64      = (DataInt64  .fromInteger.toInteger) <$> {#get ShardingKeyColumn -> value.asInt64      #} p
-      go p NativeTypeUint64     = (DataUint64 .fromInteger.toInteger) <$> {#get ShardingKeyColumn -> value.asUint64     #} p
-      go p NativeTypeFloat      = DataFloat      <$> {#get ShardingKeyColumn -> value.asFloat      #} p
-      go p NativeTypeDouble     = DataDouble     <$> {#get ShardingKeyColumn -> value.asDouble     #} p
-      go p NativeTypeBytes      = DataBytes      <$> do
+      go p NativeTypeInt64      _ = (DataInt64  .fromInteger.toInteger) <$> {#get ShardingKeyColumn -> value.asInt64      #} p
+      go p NativeTypeUint64     _ = (DataUint64 .fromInteger.toInteger) <$> {#get ShardingKeyColumn -> value.asUint64     #} p
+      go p NativeTypeFloat      _ = DataFloat      <$> {#get ShardingKeyColumn -> value.asFloat      #} p
+      go p NativeTypeDouble     _ = DataDouble     <$> {#get ShardingKeyColumn -> value.asDouble     #} p
+      go p NativeTypeBytes      _ = DataText       <$> do
         ptr      <- {#get ShardingKeyColumn -> value.asBytes.ptr      #} p
         length   <- {#get ShardingKeyColumn -> value.asBytes.length   #} p
         encoding <- {#get ShardingKeyColumn -> value.asBytes.encoding #} p >>= tb
-        let bytes = (ptr, fromIntegral length)
-        return Data_Bytes {..}
-      go p NativeTypeTimestamp  = DataTimestamp  <$> do
+        T.pack <$> peekCStringLen (ptr, fromIntegral length)
+      go p NativeTypeTimestamp  t = do
         year           <- {#get ShardingKeyColumn -> value.asTimestamp.year           #} p
         month          <- {#get ShardingKeyColumn -> value.asTimestamp.month          #} p
         day            <- {#get ShardingKeyColumn -> value.asTimestamp.day            #} p
@@ -697,23 +739,23 @@ instance Storable Data_ShardingKeyColumn where
         fsecond        <- {#get ShardingKeyColumn -> value.asTimestamp.fsecond        #} p
         tzHourOffset   <- {#get ShardingKeyColumn -> value.asTimestamp.tzHourOffset   #} p
         tzMinuteOffset <- {#get ShardingKeyColumn -> value.asTimestamp.tzMinuteOffset #} p
-        return Data_Timestamp {..}
-      go p NativeTypeIntervalDs = DataIntervalDs <$> do
+        return $ toTime t Data_Timestamp{..}
+      go p NativeTypeIntervalDs _ = DataIntervalDs <$> do
         days     <- {#get ShardingKeyColumn -> value.asIntervalDS.days     #} p
         hours    <- {#get ShardingKeyColumn -> value.asIntervalDS.hours    #} p
         minutes  <- {#get ShardingKeyColumn -> value.asIntervalDS.minutes  #} p
         seconds  <- {#get ShardingKeyColumn -> value.asIntervalDS.seconds  #} p
         fseconds <- {#get ShardingKeyColumn -> value.asIntervalDS.fseconds #} p
-        return Data_IntervalDS {..}
-      go p NativeTypeIntervalYm = DataIntervalYm <$> do
+        return $ picosecondsToDiffTime $ (fromIntegral days * 24 * 3600 + fromIntegral hours * 3600 + fromIntegral minutes * 60 + fromIntegral seconds) * picoResolution + fromIntegral fseconds
+      go p NativeTypeIntervalYm _ = DataIntervalYm <$> do
         years    <- {#get ShardingKeyColumn -> value.asIntervalYM.years    #} p
         months   <- {#get ShardingKeyColumn -> value.asIntervalYM.months   #} p
         return Data_IntervalYM {..}
-      go p NativeTypeLob        = DataLob        <$> {#get ShardingKeyColumn -> value.asLOB        #} p
-      go p NativeTypeObject     = DataObject     <$> {#get ShardingKeyColumn -> value.asObject     #} p
-      go p NativeTypeStmt       = DataStmt       <$> {#get ShardingKeyColumn -> value.asStmt       #} p
-      go p NativeTypeRowid      = DataRowid      <$> {#get ShardingKeyColumn -> value.asRowid      #} p
-      go p NativeTypeBoolean    = (DataBoolean .toBool)<$> {#get ShardingKeyColumn -> value.asBoolean    #} p
+      go p NativeTypeLob        _ = DataLob        <$> {#get ShardingKeyColumn -> value.asLOB        #} p
+      go p NativeTypeObject     _ = DataObject     <$> {#get ShardingKeyColumn -> value.asObject     #} p
+      go p NativeTypeStmt       _ = DataStmt       <$> {#get ShardingKeyColumn -> value.asStmt       #} p
+      go p NativeTypeRowid      _ = DataRowid      <$> {#get ShardingKeyColumn -> value.asRowid      #} p
+      go p NativeTypeBoolean    _ = (DataBoolean .toBool)<$> {#get ShardingKeyColumn -> value.asBoolean    #} p
 
 data Data_StmtInfo = Data_StmtInfo
   { isQuery       :: !Bool

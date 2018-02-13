@@ -1,6 +1,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TupleSections         #-}
 {-|
 
@@ -193,7 +194,7 @@ createConnection cxt username password connstr hcmp hccp
     & inStrLen connstr
     & inPtr (\c -> libContextInitCommonCreateParams cxt c >> peek c >>= poke c . hcmp)
     & inPtr (\c -> libContextInitConnCreateParams   cxt c >> peek c >>= poke c . hccp)
-    & outValue cxt (peekWithCxt cxt)
+    & outCxtPtr (cxt,cxt)
 
 -- | Closes the connection and makes it unusable for further activity. close connection, but not release resource, plese use 'releaseConnection' to release and close connection
 {-# INLINE closeConnection #-}
@@ -322,10 +323,11 @@ getServerVersion (cxt,p) = libConnGetServerVersion p & out3Value cxt go
 -- The reference should be released as soon as it is no longer needed.
 {-# INLINE getObjectType #-}
 getObjectType :: PtrConn -> Text -> IO PtrObjectType
-getObjectType (cxt,p) name
-  = libConnGetObjectType p
+getObjectType p name
+  = libConnGetObjectType
+    & inCxtPtr p
     & inStrLen name
-    & outValue cxt (peekWithCxt cxt)
+    & outCxtPtr p
 
 -- | Returns the encoding information used by the connection.
 -- This will be equivalent to the values passed when the standalone connection or session pool was created,
@@ -447,7 +449,7 @@ startupDatabase (cxt,p) sm = libConnStartupDatabase p & inEnum sm & outBool
 -- | Acquires a connection from the pool and returns a reference to it. This reference should be released as soon as it is no longer needed.
 {-# INLINE acquiredConnection #-}
 acquiredConnection :: PtrPool -> IO PtrConn
-acquiredConnection (cxt,p) = libPoolAcquireConnection p nullPtr 0 nullPtr 0 nullPtr & outValue cxt (peekWithCxt cxt)
+acquiredConnection ps@(_,p) = libPoolAcquireConnection p nullPtr 0 nullPtr 0 nullPtr & outCxtPtr ps
 
 -- | Adds a reference to the pool. This is intended for situations where a reference to
 -- the pool needs to be maintained independently of the reference returned when the pool was created.
@@ -474,7 +476,7 @@ createPool cxt username password connstr hcmp hpcp
     & inStrLen connstr
     & inPtr (\c -> libContextInitCommonCreateParams cxt c >> peek c >>= poke c . hcmp)
     & inPtr (\c -> libContextInitPoolCreateParams   cxt c >> peek c >>= poke c . hpcp)
-    & outValue cxt (peekWithCxt cxt)
+    & outCxtPtr (cxt,cxt)
 
 -- | Closes the pool and makes it unusable for further activity.
 {-# INLINE closePool #-}
@@ -605,12 +607,13 @@ prepareStatement
   -> Text       -- ^ SQL String, not allow to use multi lines or semicolon as end of sql.
                 -- use 'normalize' use normalize sql text.
   -> IO PtrStmt
-prepareStatement (cxt,p) scrollable sql
-  = libConnPrepareStmt p
+prepareStatement p scrollable sql
+  = libConnPrepareStmt
+    & inCxtPtr p
     & inBool scrollable
     & inStrLen sql
     & (\f -> f nullPtr 0)
-    & outValue cxt (peekWithCxt cxt)
+    & outCxtPtr p
 
 -- | Normalize SQL, replace newline characters with space characters. and remove semicolon in the end of sql
 {-# INLINE normalize #-}
@@ -700,14 +703,12 @@ bindByPosition (cxt,p) pos (_,var)
 bindValueByName
   :: PtrStmt       -- ^ Statement
   -> Text          -- ^ a byte string in the encoding used for CHAR data giving the name of the placeholder which is to be bound.
-  -> NativeTypeNum -- ^ the type of data that is being bound.
-  -> PtrData       -- ^ the data which is to be bound, as a pointer to a dpiData structure.
-                   -- A variable will be created based on the type of data being bound
-                   -- and a reference to this variable retained.
+  -> DataValue     -- ^ Value
                    -- Once the statement has been executed, this new variable will be released.
   -> IO Bool
-bindValueByName (cxt,p) name ntn dt
-  = libStmtBindValueByName p
+bindValueByName (cxt,p) name dv = do
+  (ntn, ot, dt) <- newData dv
+  libStmtBindValueByName p
     & inStrLen name
     & inEnum ntn
     & inVar dt
@@ -722,14 +723,12 @@ bindValueByPosition
                    -- The position of a placeholder is determined by its location in the statement.
                    -- Placeholders are numbered from left to right, starting from 1,
                    -- and duplicate names do not count as additional placeholders.
-  -> NativeTypeNum -- ^ the type of data that is being bound.
-  -> PtrData       -- ^ the data which is to be bound, as a pointer to a dpiData structure.
-                   -- A variable will be created based on the type of data being bound
-                   -- and a reference to this variable retained.
+  -> DataValue     -- ^ Value
                    -- Once the statement has been executed, this new variable will be released.
   -> IO Bool
-bindValueByPosition (cxt,p) pos ntn dt
-  = libStmtBindValueByPos p
+bindValueByPosition (cxt,p) pos dv = do
+  (ntn, _, dt) <- newData dv
+  libStmtBindValueByPos p
     & inInt pos
     & inEnum ntn
     & inVar dt
@@ -859,15 +858,17 @@ getQueryValue
   :: PtrStmt -- ^ Statement
   -> Int     -- ^ the position of the column whose metadata is to be retrieved. The first position is 1.
   -> IO DataValue
-getQueryValue (cxt,p) pos
+getQueryValue ps@(cxt,p) pos
   = libStmtGetQueryValue p
     & inInt pos
-    & out2Value cxt go
+    & out2Value cxt (go ps pos)
     where
       {-# INLINE go #-}
-      go (pt,pd) = do
+      go p pos (pt,pd) = do
+        Data_QueryInfo{..} <- getQueryInfo p pos
+        let Data_DataTypeInfo{..} = typeInfo
         t <- te <$> peek pt
-        peek pd >>= _get t
+        peek pd >>= _get oracleTypeNum t
 
 -- ** Execute Statement
 
@@ -994,10 +995,11 @@ lobAddRef = runBool libLobAddRef
 -- The reference should be released as soon as it is no longer needed.
 {-# INLINE newTempLob #-}
 newTempLob :: PtrConn -> OracleTypeNum -> IO PtrLob
-newTempLob (cxt,p) otn
-  = libConnNewTempLob p
+newTempLob p otn
+  = libConnNewTempLob
+    & inCxtPtr p
     & inEnum otn
-    & outValue cxt (peekWithCxt cxt)
+    & outCxtPtr p
 
 -- | close lob
 {-# INLINE closeLob #-}
@@ -1199,17 +1201,17 @@ objectDeleteElementByIndex (cxt,p) pos
 {-# INLINE setObjectAttributeValue #-}
 setObjectAttributeValue :: PtrObject -> PtrObjectAttr -> DataValue -> IO Bool
 setObjectAttributeValue (cxt,p) (_,poa) v = do
-  (ntn, pd) <- newData v
+  (ntn, _, pd) <- newData v
   libObjectSetAttributeValue p poa & inEnum ntn & inVar pd & outBool
 
 -- | Returns the value of one of the object’s attributes.
 {-# INLINE getObjectAttributeValue #-}
-getObjectAttributeValue :: PtrObject -> PtrObjectAttr -> NativeTypeNum -> IO DataValue
-getObjectAttributeValue (cxt,p) (_,poa) ntn
+getObjectAttributeValue :: PtrObject -> PtrObjectAttr -> NativeTypeNum -> OracleTypeNum -> IO DataValue
+getObjectAttributeValue (cxt,p) (_,poa) ntn ot
   = libObjectGetAttributeValue p
     & inVar poa
     & inEnum ntn
-    & outValue cxt (_get ntn)
+    & outValue cxt (_get ot ntn)
 
 -- Returns whether an element exists at the specified index.
 {-# INLINE getObjectElementExistsByIndex #-}
@@ -1223,16 +1225,17 @@ getObjectElementExistsByIndex (cxt,p) ind
 {-# INLINE setObjectElementValueByIndex #-}
 setObjectElementValueByIndex :: PtrObject -> Int -> DataValue -> IO Bool
 setObjectElementValueByIndex (cxt,p) ind v = do
-  (ntn, pd) <- newData v
+  (ntn, ot, pd) <- newData v
   libObjectSetElementValueByIndex p & inInt ind & inEnum ntn & inVar pd & outBool
+
 -- | Returns the value of the element found at the specified index.
 {-# INLINE getObjectElementValueByIndex #-}
-getObjectElementValueByIndex :: PtrObject -> Int -> NativeTypeNum -> IO DataValue
-getObjectElementValueByIndex (cxt,p) pos ntn
+getObjectElementValueByIndex :: PtrObject -> Int -> NativeTypeNum -> OracleTypeNum -> IO DataValue
+getObjectElementValueByIndex (cxt,p) pos ntn ot
   = libObjectGetElementValueByIndex p
     & inInt pos
     & inEnum ntn
-    & outValue cxt (_get ntn)
+    & outValue cxt (_get ot ntn)
 
 -- | Returns the first index used in a collection.
 {-# INLINE getObjectFirstIndex #-}
@@ -1311,10 +1314,11 @@ releaseObjectType = runBool libObjectTypeRelease
 -- | Returns the list of attributes that belong to the object type.
 {-# INLINE getObjectTypeAttributes #-}
 getObjectTypeAttributes :: PtrObjectType -> Int -> IO PtrObjectAttr
-getObjectTypeAttributes (cxt,p) num
-  = libObjectTypeGetAttributes p
+getObjectTypeAttributes p num
+  = libObjectTypeGetAttributes
+    & inCxtPtr p
     & inInt num
-    & outValue cxt (peekWithCxt cxt)
+    & outCxtPtr p
 
 -- | Returns information about the object type.
 {-# INLINE getObjectTypeInfo #-}
@@ -1487,7 +1491,7 @@ setVarNumberOfElements (_,p) num = libVarSetNumElementsInArray p & inInt num & o
 -- The reference should be released as soon as it is no longer needed.
 {-# INLINE newDeqOptions #-}
 newDeqOptions :: PtrConn -> IO PtrDeqOptions
-newDeqOptions (cxt,p) = libConnNewDeqOptions p & outValue cxt (peekWithCxt cxt)
+newDeqOptions p = libConnNewDeqOptions & inCxtPtr p & outCxtPtr p
 
 -- | Dequeues a message from a queue.
 {-# INLINE deqObject #-}
@@ -1498,17 +1502,13 @@ deqObject
   -> PtrMsgProps     -- ^ a reference to the message properties that will be populated with information from the message that is dequeued.
   -> PtrObject       -- ^ a reference to the object which will be populated with the message that is dequeued.
   -> IO (Maybe Text) -- ^ a pointer to a byte string which will be populated with the id of the message that is dequeued
-deqObject (cxt,p) queueName (_,options) (_,props) (_,payload)
+deqObject (cxt,p) queueName options props payload
   = libConnDeqObject p
     & inStrLen queueName
-    & inVar options
-    & inVar props
-    & inVar payload
-    & out2Value cxt go
-    where
-      {-# INLINE go #-}
-      go ps@(p,_) | p == nullPtr = return Nothing
-                  | otherwise    = Just <$> peekCStrLen ps
+    & inCxtPtr options
+    & inCxtPtr props
+    & inCxtPtr payload
+    & out2Value cxt peekMaybeCStrLen
 
 -- | Releases a reference to the dequeue options.
 -- A count of the references to the dequeue options is maintained and when this count reaches zero,
@@ -1643,7 +1643,7 @@ setDeqOptionsDeliveryMode (cxt,p) mdm = libDeqOptionsSetDeliveryMode p & inEnum 
 -- The reference should be released as soon as it is no longer needed.
 {-# INLINE newEnqOptions #-}
 newEnqOptions :: PtrConn -> IO PtrEnqOptions
-newEnqOptions (cxt,p) = libConnNewEnqOptions p & outValue cxt (peekWithCxt cxt)
+newEnqOptions p = libConnNewEnqOptions & inCxtPtr p & outCxtPtr p
 
 -- | Enqueues a message to a queue.
 {-# INLINE enqObject #-}
@@ -1660,11 +1660,7 @@ enqObject (cxt,p) queueName (_,options) (_,props) (_,payload)
     & inVar options
     & inVar props
     & inVar payload
-    & out2Value cxt go
-    where
-      {-# INLINE go #-}
-      go ps@(p,_) | p == nullPtr = return Nothing
-                  | otherwise    = Just <$> peekCStrLen ps
+    & out2Value cxt peekMaybeCStrLen
 
 -- | Adds a reference to the enqueue options.
 -- This is intended for situations where a reference to the enqueue options needs to be maintained independently of
@@ -1720,7 +1716,7 @@ setEnqOptionsDeliveryMode (cxt,p) mdm = libEnqOptionsSetDeliveryMode p & inEnum 
 -- The reference should be released as soon as it is no longer needed.
 {-# INLINE newMsgProps #-}
 newMsgProps :: PtrConn -> IO PtrMsgProps
-newMsgProps (cxt,p) =libConnNewMsgProps p & outValue cxt (peekWithCxt cxt)
+newMsgProps p = libConnNewMsgProps & inCxtPtr p & outCxtPtr p
 
 -- | Adds a reference to the message properties.
 -- This is intended for situations where a reference to the message properties
@@ -1886,7 +1882,8 @@ subscrPrepareStatement
   :: PtrSubscr  -- ^  a reference to the subscription on which the statement is to be prepared for registration.
   -> Text       -- ^ the SQL that is to be prepared
   -> IO PtrStmt -- ^ a reference to the statement that was prepared
-subscrPrepareStatement (cxt,p) sql
-  = libSubscrPrepareStmt p
+subscrPrepareStatement p sql
+  = libSubscrPrepareStmt
+    & inCxtPtr p
     & inStrLen sql
-    & outValue cxt (peekWithCxt cxt)
+    & outCxtPtr p
