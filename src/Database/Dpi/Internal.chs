@@ -351,6 +351,7 @@ newData d = do
   poke pd (Data $ \_ _ -> return d)
   return (tp, ot, pd)
   where
+    {-# INLINE go #-}
     go (DataNull       t) = (t,                    OracleTypeNone         )
     go (DataInt64      _) = (NativeTypeInt64,      OracleTypeNativeInt    )
     go (DataUint64     _) = (NativeTypeUint64,     OracleTypeNativeUint   )

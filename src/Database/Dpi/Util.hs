@@ -4,7 +4,6 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE InstanceSigs           #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
-{-# LANGUAGE OverloadedStrings      #-}
 {-# LANGUAGE RankNTypes             #-}
 {-# LANGUAGE TupleSections          #-}
 {-# LANGUAGE UndecidableInstances   #-}
@@ -22,6 +21,7 @@ isOk = (== success)
 
 data DpiException
   = ErrorInfoException Data_ErrorInfo
+  | DpiException Text
   deriving Show
 
 instance Exception DpiException
@@ -59,7 +59,7 @@ inVar = (&)
 
 {-# INLINE inCxtPtr #-}
 inCxtPtr :: HasCxtPtr p -> (Ptr p -> r) -> r
-inCxtPtr (cxt,p) f = f $ p
+inCxtPtr (cxt,p) f = f p
 
 {-# INLINE inStr #-}
 inStr :: (Return IO r, ToString s) => s -> (CString -> r) -> r
@@ -118,7 +118,7 @@ outValue' !cxt ab be lib = withPtrs $ \a -> do
   if isOk r then ab a else throwContextError cxt
 
 {-# INLINE runIndex #-}
-runIndex f !(cxt,p) = f p & out2Value cxt go
+runIndex f (cxt,p) = f p & out2Value cxt go
   where
     {-# INLINE go #-}
     go (pos,pin) = do

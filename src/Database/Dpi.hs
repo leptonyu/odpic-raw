@@ -622,6 +622,10 @@ normalize = T.dropWhileEnd (==';')
           . T.strip
           . T.map (\c -> if c == '\n' || c == '\r' then ' ' else c)
 
+{-# INLINE escapeName #-}
+escapeName :: Text -> Text
+escapeName name = "\"" <> T.replace "\"" "\"\"" name <> "\""
+
 -- | Closes the statement and makes it unusable for further work immediately,
 -- rather than when the reference count reaches zero.
 {-# INLINE closeStatement #-}
@@ -970,7 +974,7 @@ getBatchErrors ps@(cxt,p) = do
   c <- getBatchErrorCount ps
   if c <= 0
     then return []
-    else do
+    else
       allocaArray c $ \par -> do
         ok <- libStmtGetBatchErrors p & inInt c & inVar par & outBool
         if ok then peekArray c par else throwContextError cxt

@@ -5,41 +5,141 @@
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE TypeSynonymInstances  #-}
 
-module Database.Oracle where
+module Database.Oracle(
+    DataColumn
+  , DataRow
+  , SQL
+  , FromRow(..)
+  , FromColumn(..)
+  , queryByPage
+  , queryAsRes
+  , execute
+  ) where
 
 import           Database.Dpi
 
+import           Control.Exception           (throw)
 import           Control.Monad               (void)
 import           Control.Monad.IO.Class      (MonadIO (..))
 import           Control.Monad.Trans.Control (MonadBaseControl)
 import           Data.Acquire                (Acquire, mkAcquire, with)
 import           Data.Conduit
 import qualified Data.Conduit.List           as CL
+import           Data.Int
 import           Data.Monoid                 ((<>))
 import           Data.Text                   (Text)
 import qualified Data.Text                   as T
+import           Data.Time
+import           Data.Word
+import           Foreign.C.Types
+import           GHC.Float
 
-
-type DataColumn = [(Text, Maybe OracleTypeNum, DataValue)]
+type DataColumn = (Text, Maybe Data_DataTypeInfo, Bool, DataValue)
+type DataRow    = [DataColumn]
 type SQL        = Text
 
-class FromDataColumn a where
-  fromColumn :: DataColumn -> IO a
+class FromRow a where
+  fromRow :: DataRow -> IO a
 
-instance FromDataColumn DataColumn where
-  fromColumn = return
+instance FromRow DataRow where
+  {-# INLINE fromRow #-}
+  fromRow = return
 
-queryByPage :: (MonadIO m, MonadBaseControl IO m, FromDataColumn a) => PtrConn -> SQL -> DataColumn -> Page -> m [a]
+instance FromRow DataColumn where
+  {-# INLINE fromRow #-}
+  fromRow [v] = return v
+  fromRow vs  = singleError vs "DataColumn"
+
+class FromColumn a where
+  fromColumn :: DataColumn -> IO (Maybe a)
+
+{-# INLINE singleError #-}
+singleError :: Show b => b -> Text -> IO a
+singleError v name = throw $ DpiException $ T.pack (show v) <> " type mismatch to " <> name
+
+instance FromColumn Text where
+  {-# INLINE fromColumn #-}
+  fromColumn (_,_,_,DataNull _) = return Nothing
+  fromColumn (_,_,_,DataText v) = return $ Just v
+  fromColumn v                  = singleError v "Text"
+
+instance FromColumn Int64 where
+  {-# INLINE fromColumn #-}
+  fromColumn (_,_,_,DataNull _)  = return Nothing
+  fromColumn (_,_,_,DataInt64 v) = return $ Just v
+  fromColumn v                   = singleError v "Int64"
+
+instance FromColumn Word64 where
+  {-# INLINE fromColumn #-}
+  fromColumn (_,_,_,DataNull _)   = return Nothing
+  fromColumn (_,_,_,DataUint64 v) = return $ Just v
+  fromColumn v                    = singleError v "Word64"
+
+instance FromColumn Float where
+  {-# INLINE fromColumn #-}
+  fromColumn (_,_,_,DataNull _)             = return Nothing
+  fromColumn (_,_,_,DataFloat  (CFloat  v)) = return $ Just v
+  fromColumn (_,_,_,DataDouble (CDouble v)) = return $ Just $ double2Float v
+  fromColumn v                              = singleError v "Float"
+
+instance FromColumn Double where
+  {-# INLINE fromColumn #-}
+  fromColumn (_,_,_,DataNull _)             = return Nothing
+  fromColumn (_,_,_,DataFloat  (CFloat  v)) = return $ Just $ float2Double v
+  fromColumn (_,_,_,DataDouble (CDouble v)) = return $ Just v
+  fromColumn v                              = singleError v "Double"
+
+instance FromColumn LocalTime where
+  {-# INLINE fromColumn #-}
+  fromColumn (_,_,_,DataNull      _) = return Nothing
+  fromColumn (_,_,_,DataLocalTime v) = return $ Just v
+  fromColumn v                       = singleError v "LocalTime"
+
+instance FromColumn UTCTime where
+  {-# INLINE fromColumn #-}
+  fromColumn (_,_,_,DataNull      _) = return Nothing
+  fromColumn (_,_,_,DataTimestamp v) = return $ Just v
+  fromColumn v                       = singleError v "UTCTime"
+
+instance FromColumn DiffTime where
+  {-# INLINE fromColumn #-}
+  fromColumn (_,_,_,DataNull      _)  = return Nothing
+  fromColumn (_,_,_,DataIntervalDs v) = return $ Just v
+  fromColumn v                        = singleError v "DiffTime"
+
+instance FromColumn Data_IntervalYM where
+  {-# INLINE fromColumn #-}
+  fromColumn (_,_,_,DataNull       _) = return Nothing
+  fromColumn (_,_,_,DataIntervalYm v) = return $ Just v
+  fromColumn v                        = singleError v "Data_IntervalYM"
+
+instance FromColumn Bool where
+  {-# INLINE fromColumn #-}
+  fromColumn (_,_,_,DataNull    _) = return Nothing
+  fromColumn (_,_,_,DataBoolean v) = return $ Just v
+  fromColumn (_,_,_,DataInt64   v) = return $ Just $ v /= 0
+  fromColumn (_,_,_,DataUint64  v) = return $ Just $ v /= 0
+  fromColumn (_,_,_,DataFloat   v) = return $ Just $ v /= 0
+  fromColumn (_,_,_,DataDouble  v) = return $ Just $ v /= 0
+  fromColumn v                     = singleError v "Bool"
+
+queryByPage :: (MonadIO m, MonadBaseControl IO m, FromRow a) => PtrConn -> SQL -> DataRow -> Page -> m [a]
 queryByPage conn sql ps (offset,limit) = do
   let sql' = normalize sql <> " OFFSET " <> T.pack (show offset) <> " ROWS FETCH NEXT " <> T.pack (show limit) <> " ROWS ONLY"
-  with (query conn sql' ps) ($$ CL.fold (flip (:)) [])
+  with (queryAsRes conn sql' ps) ($$ CL.fold (flip (:)) [])
 
-query :: (MonadIO m, FromDataColumn a) => PtrConn -> SQL -> DataColumn -> Acquire (Source m a)
-query conn sql ps = do
-  st <- liftIO $ prepareStatement conn False (normalize sql)
-  ac <- mkAcquire (bindValue st ps >> executeStatement st ModeExecDefault) (\_ -> Control.Monad.void $ releaseStatement st)
+queryAsRes :: (MonadIO m, FromRow a) => PtrConn -> SQL -> DataRow -> Acquire (Source m a)
+queryAsRes conn sql ps = do
+  (st,ac) <- mkAcquire (pst conn sql ps) (Control.Monad.void . releaseStatement . fst)
   return $ pull st ac
   where
+    {-# INLINE pst #-}
+    pst conn sql ps = do
+      st <- prepareStatement conn False (normalize sql)
+      bindValue st ps
+      r  <- executeStatement st ModeExecDefault
+      return (st,r)
+    {-# INLINE pull #-}
     pull st r = do
       mayC <- liftIO $ fetch st
       case mayC of
@@ -47,17 +147,19 @@ query conn sql ps = do
         (Just _) -> do
           vs <- liftIO $ mapM (getQueryValue st) [1..r]
           ps <- liftIO $ mapM (getQueryInfo  st) [1..r]
-          cl <- liftIO $ fromColumn $ zipWith meg ps vs
+          cl <- liftIO $ fromRow $ zipWith meg ps vs
           yield cl
           pull st r
-    meg Data_QueryInfo{..} v = let Data_DataTypeInfo{..} = typeInfo in (name, Just oracleTypeNum, v)
+    {-# INLINE meg #-}
+    meg Data_QueryInfo{..} v = (name, Just typeInfo, nullOk, v)
 
-bindValue :: PtrStmt -> DataColumn -> IO ()
+{-# INLINE bindValue #-}
+bindValue :: PtrStmt -> DataRow -> IO ()
 bindValue = mapM_ . bd
   where
-    bd st (n,_,v) = bindValueByName st n v
+    bd st (n,_,_,v) = bindValueByName st n v
 
-execute :: MonadIO m => PtrConn -> SQL -> DataColumn -> m Int
+execute :: MonadIO m => PtrConn -> SQL -> DataRow -> m Int
 execute conn sql ps = liftIO $ do
   st <- prepareStatement conn False (normalize sql)
   bindValue st ps
