@@ -21,6 +21,7 @@ import           Database.Dpi
 import           Control.Exception           (throw)
 import           Control.Monad               (void)
 import           Control.Monad.IO.Class      (MonadIO (..))
+import           Control.Monad.IO.Unlift     (MonadUnliftIO)
 import           Control.Monad.Trans.Control (MonadBaseControl)
 import           Data.Acquire                (Acquire, mkAcquire, with)
 import           Data.Conduit
@@ -123,12 +124,12 @@ instance FromColumn Bool where
   fromColumn (_,_,_,DataDouble  v) = return $ Just $ v /= 0
   fromColumn v                     = singleError v "Bool"
 
-queryByPage :: (MonadIO m, MonadBaseControl IO m, FromRow a) => PtrConn -> SQL -> DataRow -> Page -> m [a]
+queryByPage :: (MonadUnliftIO m, MonadBaseControl IO m, FromRow a) => PtrConn -> SQL -> DataRow -> Page -> m [a]
 queryByPage conn sql ps (offset,limit) = do
   let sql' = normalize sql <> " OFFSET " <> T.pack (show offset) <> " ROWS FETCH NEXT " <> T.pack (show limit) <> " ROWS ONLY"
-  with (queryAsRes conn sql' ps) ($$ CL.fold (flip (:)) [])
+  with (queryAsRes conn sql' ps) (\a -> runConduit $ a .| CL.fold (flip (:)) [])
 
-queryAsRes :: (MonadIO m, FromRow a) => PtrConn -> SQL -> DataRow -> Acquire (Source m a)
+queryAsRes :: (MonadIO m, FromRow a) => PtrConn -> SQL -> DataRow -> Acquire (ConduitT () a m ())
 queryAsRes conn sql ps = do
   (st,ac) <- mkAcquire (pst conn sql ps) (Control.Monad.void . releaseStatement . fst)
   return $ pull st ac

@@ -11,11 +11,22 @@ import           Control.Monad.Logger (NoLoggingT, runNoLoggingT)
 import           Data.Acquire         (with)
 import           Data.Conduit
 import qualified Data.Conduit.List    as CL
+import           Data.Monoid          ((<>))
+import qualified Data.Text            as T
 
 -- define this 3 parameters before run test
 username = "username"
 password = "password"
 connstr  = "localhost:1521/dbname"
+
+prepareTable :: PtrConn -> IO ()
+prepareTable conn = do
+  execute conn "DROP TABLE TEST_T_NAME" []
+  execute conn "CREATE TABLE TEST_T_NAME(ID INTEGER PRIMARY KEY, NAME VARCHAR2(64) NOT NULL, CREATE_TIME DATE DEFAULT SYSDATE NOT NULL)" []
+  execute conn "DROP SEQUENCE TEST_SEQ_NAME" []
+  execute conn "CREATE SEQUENCE TEST_SEQ_NAME" []
+  return ()
+
 
 main :: IO ()
 main = hspec $ do
@@ -107,5 +118,19 @@ main = hspec $ do
           mapM_ f [1..2]
           v <- queryByPage conn "SELECT DBTIMEZONE,CURRENT_DATE,CURRENT_TIMESTAMP,SYSDATE,SYSTIMESTAMP FROM dual" [] (0,1)
           print (v :: [DataRow])
-          v <- queryByPage conn "SELECT * from t_identity" [] (0,1)
-          print (v :: [DataRow])
+
+          prepareTable conn
+          let insert = "INSERT INTO TEST_T_NAME(ID,NAME) VALUES(:id,:name)"
+          execute conn insert [("id",Nothing,False,DataInt64 0),("name",Nothing,False,DataText "test")]
+          v <- queryByPage conn "SELECT * FROM TEST_T_NAME" [] (0,1)
+          print (v::[DataRow])
+
+          mapM_ (\i -> execute conn insert [("id",Nothing,False,DataInt64 i),("name",Nothing,False,DataText ("test-" <> T.pack (show i)))]) [1..100]
+
+          v <- queryByPage conn "SELECT * FROM TEST_T_NAME" [] (1,10)
+          print (v::[DataRow])
+
+
+
+
+
