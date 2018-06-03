@@ -42,7 +42,7 @@ extra-deps:
   - odpic-raw-0.2.0
 # for lts-10.x
 extra-deps:
-  - odpic-raw-0.1.11
+  - odpic-raw-0.2.0
 ```
 
 
