@@ -9,7 +9,7 @@ Haskell raw bindings to [Oracle ODPI-C Library](https://github.com/oracle/odpi)
 Requirements:
 
   * [libodpic 2.x](https://github.com/oracle/odpi/releases) (dpi.h should installed in /usr/local/include)
-  * [Oracle Instant Client](http://www.oracle.com/technetwork/database/features/instant-client/index-097480.html)
+  * [Oracle Instant Client Basic or Basic Light package](http://www.oracle.com/technetwork/database/features/instant-client/index-097480.html)
   * GHC 8.0.1 or greater
   
 Install:
@@ -42,7 +42,7 @@ extra-deps:
   - odpic-raw-0.2.0
 # for lts-10.x
 extra-deps:
-  - odpic-raw-0.2.0
+  - odpic-raw-0.1.11
 ```
 
 
