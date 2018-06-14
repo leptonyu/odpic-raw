@@ -121,11 +121,11 @@ main = hspec $ do
 
           prepareTable conn
           let insert = "INSERT INTO TEST_T_NAME(ID,NAME) VALUES(:id,:name)"
-          execute conn insert [("id",Nothing,False,DataInt64 0),("name",Nothing,False,DataText "test")]
+          execute conn insert [("id",Nothing,False,DataInt 0),("name",Nothing,False,DataVarchar "test")]
           v <- queryByPage conn "SELECT * FROM TEST_T_NAME" [] (0,1)
           print (v::[DataRow])
 
-          mapM_ (\i -> execute conn insert [("id",Nothing,False,DataInt64 i),("name",Nothing,False,DataText ("test-" <> T.pack (show i)))]) [1..100]
+          mapM_ (\i -> execute conn insert [("id",Nothing,False,DataInt i),("name",Nothing,False,DataVarchar ("test-" <> T.pack (show i)))]) [1..100]
 
           v <- queryByPage conn "SELECT * FROM TEST_T_NAME" [] (1,10)
           print (v::[DataRow])

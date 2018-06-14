@@ -28,18 +28,18 @@ if [ "$update" -gt 0 ]; then
   exit 1
 fi
 
-version=`grep '^version' odpic-raw.cabal | awk '{print $2}'`
+# version=`grep '^version' odpic-raw.cabal | awk '{print $2}'`
 
-sed -i.bak "s|hackage-v[0-9][0-9]*\(.[0-9][0-9]*\)*-orange.svg|hackage-v$version-orange.svg|" README.md
-sed -i.bak "s|\(odpic-raw-\)[0-9][0-9]*\(.[0-9][0-9]*\)*|\1$version|" README.md
-rm -f README.md.bak
+# sed -i.bak "s|hackage-v[0-9][0-9]*\(.[0-9][0-9]*\)*-orange.svg|hackage-v$version-orange.svg|" README.md
+# sed -i.bak "s|\(odpic-raw-\)[0-9][0-9]*\(.[0-9][0-9]*\)*|\1$version|" README.md
+# rm -f README.md.bak
 
-git add README.md
-git commit -m "publish v$version"
+# git add README.md
+# git commit -m "publish v$version"
 
-git tag v$version
-git push origin master
-git push --tag
+# git tag v$version
+# git push origin master
+# git push --tag
 
 stack haddock
 

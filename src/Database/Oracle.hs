@@ -60,20 +60,20 @@ singleError v name = throw $ DpiException $ T.pack (show v) <> " type mismatch t
 
 instance FromColumn Text where
   {-# INLINE fromColumn #-}
-  fromColumn (_,_,_,DataNull _) = return Nothing
-  fromColumn (_,_,_,DataText v) = return $ Just v
-  fromColumn v                  = singleError v "Text"
+  fromColumn (_,_,_,DataNull    _) = return Nothing
+  fromColumn (_,_,_,DataVarchar v) = return $ Just v
+  fromColumn v                     = singleError v "Text"
 
 instance FromColumn Int64 where
   {-# INLINE fromColumn #-}
   fromColumn (_,_,_,DataNull _)  = return Nothing
-  fromColumn (_,_,_,DataInt64 v) = return $ Just v
+  fromColumn (_,_,_,DataInt   v) = return $ Just v
   fromColumn v                   = singleError v "Int64"
 
 instance FromColumn Word64 where
   {-# INLINE fromColumn #-}
   fromColumn (_,_,_,DataNull _)   = return Nothing
-  fromColumn (_,_,_,DataUint64 v) = return $ Just v
+  fromColumn (_,_,_,DataUint   v) = return $ Just v
   fromColumn v                    = singleError v "Word64"
 
 instance FromColumn Float where
@@ -89,12 +89,6 @@ instance FromColumn Double where
   fromColumn (_,_,_,DataFloat  (CFloat  v)) = return $ Just $ float2Double v
   fromColumn (_,_,_,DataDouble (CDouble v)) = return $ Just v
   fromColumn v                              = singleError v "Double"
-
-instance FromColumn LocalTime where
-  {-# INLINE fromColumn #-}
-  fromColumn (_,_,_,DataNull      _) = return Nothing
-  fromColumn (_,_,_,DataLocalTime v) = return $ Just v
-  fromColumn v                       = singleError v "LocalTime"
 
 instance FromColumn UTCTime where
   {-# INLINE fromColumn #-}
@@ -118,8 +112,8 @@ instance FromColumn Bool where
   {-# INLINE fromColumn #-}
   fromColumn (_,_,_,DataNull    _) = return Nothing
   fromColumn (_,_,_,DataBoolean v) = return $ Just v
-  fromColumn (_,_,_,DataInt64   v) = return $ Just $ v /= 0
-  fromColumn (_,_,_,DataUint64  v) = return $ Just $ v /= 0
+  fromColumn (_,_,_,DataInt     v) = return $ Just $ v /= 0
+  fromColumn (_,_,_,DataUint    v) = return $ Just $ v /= 0
   fromColumn (_,_,_,DataFloat   v) = return $ Just $ v /= 0
   fromColumn (_,_,_,DataDouble  v) = return $ Just $ v /= 0
   fromColumn v                     = singleError v "Bool"
