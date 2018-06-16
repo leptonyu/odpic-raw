@@ -56,6 +56,8 @@ module Database.Dpi
   , ShutdownMode(..)
   , StartupMode(..)
   , StatementType(..)
+  , SubscrGroupingClass(..)
+  , SubscrGroupingType(..)
   , SubscrNamespace(..)
   , SubscrProtocol(..)
   , SubscrQOS(..)
@@ -127,6 +129,7 @@ import           Database.Dpi.Util
 import           Control.Exception
 import           Data.Maybe            (fromMaybe)
 import qualified Data.Text             as T
+import qualified Data.Text.Lazy        as TL
 
 -- * Context Interface
 
@@ -176,18 +179,23 @@ getClientVersion p = libContextGetClientVersion p & outValue p peek
 -- Connection handles are used to create all handles other than session pools and context handles.
 
 
+-- | Oracle Configuration
+data OracleConfig = OracleConfig
+  { username :: Text -- ^ the name of the user used for authenticating the user
+  , password :: Text -- ^ the password to use for authenticating the user
+  , connstr  :: Text -- ^ the connect string identifying the database to which a connection is to be established
+  } deriving Show
+
 -- | Creates a standalone connection to a database or acquires a connection from a session pool and returns a reference to the connection.
 {-# INLINE createConnection #-}
 createConnection :: PtrContext -- ^ Context
-                 -> Text -- ^ the name of the user used for authenticating the user
-                 -> Text -- ^ the password to use for authenticating the user
-                 -> Text -- ^ the connect string identifying the database to which a connection is to be established
+                 -> OracleConfig
                  -> (Data_CommonCreateParams -> Data_CommonCreateParams) -- ^ custom 'Data_CommonCreateParams'
                  -> (Data_ConnCreateParams   -> Data_ConnCreateParams) -- ^ custom 'Data_ConnCreateParams'
                  -> IO PtrConn -- ^ a reference to the connection that is created.
                  -- If a value is returned, a call to 'releaseConnection' must be made in order to release the reference.
                  -- This should be done after the error information has been retrieved.
-createConnection cxt username password connstr hcmp hccp
+createConnection cxt OracleConfig{..} hcmp hccp
   = libConnCreate cxt
     & inStrLen username
     & inStrLen password
@@ -227,19 +235,15 @@ pingConnection = runBool libConnPing
 -- | with connection
 withConnection
   :: PtrContext -- ^ Context
-  -> Text -- ^ the name of the user used for authenticating the user
-  -> Text -- ^ the password to use for authenticating the user
-  -> Text -- ^ the connect string identifying the database to which a connection is to be established
-  -> Text -- ^ NLS_LANG encoding
-  -> Text -- ^ NLS_NCHAR encoding
+  -> OracleConfig
+  -> (Data_CommonCreateParams -> Data_CommonCreateParams) -- ^ custom 'Data_CommonCreateParams'
+  -> (Data_ConnCreateParams   -> Data_ConnCreateParams) -- ^ custom 'Data_ConnCreateParams'
   -> (PtrConn -> IO a) -- ^ action use connection
   -> IO a
-withConnection p username password connstr lang nchar
+withConnection p conf hccp hccp2
   = bracket
-      (createConnection p username password connstr (set lang nchar) id)
+      (createConnection p conf hccp hccp2)
       (\c -> closeConnection ModeConnCloseDefault c `finally` releaseConnection c)
-  where
-    set l n v = v { encoding = l, nencoding = n} :: Data_CommonCreateParams
 
 -- ** Transaction Interface
 
@@ -438,7 +442,6 @@ startupDatabase
   -> IO Bool
 startupDatabase (cxt,p) sm = libConnStartupDatabase p & inEnum sm & outBool
 
-
 -- * ConnectionPool Interace
 -- $pool
 -- Pool handles are used to represent session pools.
@@ -555,6 +558,14 @@ getPoolStmtCacheSize = runInt libPoolGetStmtCacheSize
 getPoolTimeout :: PtrPool -> IO Int
 getPoolTimeout = runInt libPoolGetTimeout
 
+-- | Returns the amount of time (in milliseconds) that the caller will wait for a session to become available
+--  in the pool before returning an error.
+--
+-- @since <https://oracle.github.io/odpi/doc ODPI-C 2.4.0>
+{-# INLINE getPoolWaitTimeout #-}
+getPoolWaitTimeout :: PtrPool -> IO Int
+getPoolWaitTimeout = runInt libPoolGetWaitTimeout
+
 -- | Sets the mode used for acquiring or getting connections from the pool.
 {-# INLINE setPoolGetMode #-}
 setPoolGetMode :: PtrPool -> PoolGetMode -> IO Bool
@@ -584,6 +595,17 @@ setPoolStmtCacheSize (cxt,p) stmtCacheSize
 setPoolTimeout :: PtrPool -> Int -> IO Bool
 setPoolTimeout (cxt,p) timeout
   = libPoolSetTimeout p
+    & inInt timeout
+    & outBool
+
+-- | Sets the amount of time (in milliseconds) that the caller should wait for a session to be available
+--  in the pool before returning with an error.
+--
+-- @since <https://oracle.github.io/odpi/doc ODPI-C 2.4.0>
+{-# INLINE setPoolWaitTimeout #-}
+setPoolWaitTimeout :: PtrPool -> Int -> IO Bool
+setPoolWaitTimeout (cxt,p) timeout
+  = libPoolSetWaitTimeout p
     & inInt timeout
     & outBool
 
@@ -1353,6 +1375,117 @@ releaseRowid = runBool libRowidRelease
 rowidGetStringValue :: PtrRowid -> IO Text
 rowidGetStringValue (cxt,p) = libRowidGetStringValue p & out2Value cxt peekCStrLen
 
+-- * Data Interface
+-- $data
+-- All of these functions are used for getting and setting the various members of the dpiData structure.
+-- The members of the structure can be manipulated directly but some languages (such as Go) do not have the ability to
+-- manipulate structures containing unions or the ability to process macros.
+-- For this reason, none of these functions perform any error checking.
+-- They are assumed to be replacements for direct manipulation of the various members of the structure.
+
+-- | Returns the value of the data when the native type is 'NativeTypeBoolean'.
+getBool :: PtrData -> IO Bool
+getBool p = isOk <$> libDataGetBool p
+
+-- | Sets the value of the data when the native type is 'NativeTypeBoolean'.
+setBool :: PtrData -> Bool -> IO ()
+setBool p v = libDataSetBool p & inBool v
+
+-- | Returns a pointer to the value of the data when the native type is 'NativeTypeBytes'.
+getBytes :: PtrData -> IO Text
+getBytes p = (TL.toStrict . bytes) <$> (libDataGetBytes p >>= peek)
+
+-- | Sets the value of the data when the native type is 'NativeTypeBytes'.
+-- Do not use this function when setting data for variables.
+-- Instead, use the function 'setVarFromBytes'.
+setBytes :: PtrData -> Text -> IO ()
+setBytes p v = libDataSetBytes p & inStrLen v
+
+-- | Returns the value of the data when the native type is 'NativeTypeDouble'.
+getDouble :: PtrData -> IO Double
+getDouble p = go <$> libDataGetDouble p
+  where
+    go (CDouble d) = d
+
+-- | Sets the value of the data when the native type is 'NativeTypeDouble'.
+setDouble :: PtrData -> Double -> IO ()
+setDouble p v = libDataSetDouble p (CDouble v)
+
+-- | Returns the value of the data when the native type is 'NativeTypeFloat'.
+getFloat :: PtrData -> IO Float
+getFloat p = go <$> libDataGetFloat p
+  where
+    go (CFloat d) = d
+
+-- | Sets the value of the data when the native type is 'NativeTypeFloat'.
+setFloat :: PtrData -> Float -> IO ()
+setFloat p v = libDataSetFloat p (CFloat v)
+
+-- | Returns the value of the data when the native type is 'NativeTypeInt64'.
+getInt64 :: PtrData -> IO Int64
+getInt64 p = (fromInteger . toInteger) <$> libDataGetInt64 p
+
+-- | Sets the value of the data when the native type is 'NativeTypeInt64'.
+setInt64 :: PtrData -> Int64 -> IO ()
+setInt64 p v = libDataSetInt64 p (fromInteger . toInteger $ v)
+
+-- | Returns the value of the data when the native type is 'NativeTypeUint64'.
+getUint64 :: PtrData -> IO Word64
+getUint64 p = (fromInteger . toInteger) <$> libDataGetUint64 p
+
+-- | Sets the value of the data when the native type is 'NativeTypeUint64'.
+setUint64 :: PtrData -> Word64 -> IO ()
+setUint64 p v = libDataSetUint64 p (fromInteger . toInteger $ v)
+
+-- | Returns the value of the data when the native type is 'NativeTypeIntervalDs'.
+getIntervalDs :: PtrData -> IO Data_IntervalDS
+getIntervalDs p = libDataGetIntervalDS p >>= peek
+
+-- | Sets the value of the data when the native type is 'NativeTypeIntervalDs'.
+setIntervalDs :: PtrData -> Data_IntervalDS -> IO ()
+setIntervalDs p Data_IntervalDS{..} = libDataSetIntervalDS p days hours minutes seconds fseconds
+
+
+-- | Returns the value of the data when the native type is 'NativeTypeIntervalYm'.
+getIntervalYm :: PtrData -> IO Data_IntervalYM
+getIntervalYm p = libDataGetIntervalYM p >>= peek
+
+-- | Sets the value of the data when the native type is 'NativeTypeIntervalYm'.
+setIntervalYm :: PtrData -> Data_IntervalYM -> IO ()
+setIntervalYm p Data_IntervalYM{..} = libDataSetIntervalYM p years months
+
+-- | Returns the value of the data when the native type is 'NativeTypeLob'.
+getLob :: PtrData -> IO (Ptr DPI_Lob)
+getLob = libDataGetLOB
+
+-- | Sets the value of the data when the native type is 'NativeTypeLob'.
+setLob :: PtrData -> Ptr DPI_Lob -> IO ()
+setLob = libDataSetLOB
+
+-- | Returns the value of the data when the native type is 'NativeTypeObject'.
+getObject :: PtrData -> IO (Ptr DPI_Object)
+getObject = libDataGetObject
+
+-- | Sets the value of the data when the native type is 'NativeTypeObject'.
+setObject :: PtrData -> Ptr DPI_Object -> IO ()
+setObject = libDataSetObject
+
+-- | Returns the value of the data when the native type is 'NativeTypeStmt'.
+getStmt :: PtrData -> IO (Ptr DPI_Stmt)
+getStmt = libDataGetStmt
+
+-- | Sets the value of the data when the native type is 'NativeTypeStmt'.
+setStmt :: PtrData -> Ptr DPI_Stmt -> IO ()
+setStmt = libDataSetStmt
+
+-- | Returns the value of the data when the native type is 'NativeTypeTimestamp'.
+getTimestamp :: PtrData -> IO Data_Timestamp
+getTimestamp p = libDataGetTimestamp p >>= peek
+
+-- | Sets the value of the data when the native type is 'NativeTypeTimestamp'.
+setTimestamp :: PtrData -> Data_Timestamp -> IO ()
+setTimestamp p Data_Timestamp{..} = libDataSetTimestamp p year month day hour minute second fsecond tzHourOffset tzMinuteOffset
+
 -- * Var Interface
 -- $var
 -- Variable handles are used to represent memory areas used for transferring data to and from the database.
@@ -1429,7 +1562,23 @@ copyVar (_,p) toPos (_,from) fromPos
 -- the number of allocated elements can change in addition to the memory location.
 {-# INLINE getVarData #-}
 getVarData :: PtrVar -> IO [Data]
-getVarData (cxt,p) = libVarGetData p & out2Value cxt go
+getVarData pc =
+  if use2_4_0
+    then getVarReturnedData pc 0
+    else old pc
+  where
+    {-# INLINE go #-}
+    go (pn, pd) = join $ peekArray <$> peekInt pn <*> peek pd
+    {-# INLINE old #-}
+    old (cxt,p) = libVarGetData p & out2Value cxt go
+
+-- | Returns a pointer to an array of dpiData structures used for transferring data to and from the database.
+-- These structures are allocated by the variable itself when a DML returning statement is executed and the variable is bound.
+--
+-- @since <https://oracle.github.io/odpi/doc ODPI-C 2.4.0>
+{-# INLINE getVarReturnedData #-}
+getVarReturnedData :: PtrVar -> Int -> IO [Data]
+getVarReturnedData (cxt,p) pos = libVarGetReturnedData p & inInt pos & out2Value cxt go
   where
     {-# INLINE go #-}
     go (pn, pd) = join $ peekArray <$> peekInt pn <*> peek pd
@@ -1855,6 +2004,29 @@ newSubscr (cxt,p)  hcmp
     where
       {-# INLINE go #-}
       go cxt (p,_) = (cxt,) <$> peek p
+
+-- | Returns a reference to a subscription which is used for requesting notifications of events that take place in the database.
+-- Events that are supported are changes on tables or queries (continuous query notification)
+-- and the availability of messages to dequeue (advanced queuing).
+-- The reference should be released as soon as it is no longer needed.
+--
+-- @since <https://oracle.github.io/odpi/doc ODPI-C 2.4.0>
+subscribe
+  :: PtrConn
+  -> (Data_SubscrCreateParams -> Data_SubscrCreateParams)
+  -> IO PtrSubscr
+subscribe (cxt,p) hcmp
+  = libConnSubscribe p
+    & inPtr (\c -> libContextInitSubscrCreateParams cxt c >> peek c >>= poke c . hcmp)
+    & outValue cxt (peekWithCxt cxt)
+
+-- | Unubscribes from the events that were earlier subscribed to via the function 'subscribe'.
+-- Once this function completes successfully no further notifications will be sent for this subscription.
+--  Note that this method does not generate a notification either.
+--
+-- @since <https://oracle.github.io/odpi/doc ODPI-C 2.4.0>
+unsubscribe :: PtrConn -> PtrSubscr -> IO Bool
+unsubscribe (cxt,p) (_,ps) = isOk <$> (libConnUnsubscribe p ps)
 
 -- | Adds a reference to the subscription.
 -- This is intended for situations where a reference to the subscription
