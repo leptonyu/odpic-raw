@@ -10,7 +10,6 @@ import Control.Exception
 import Database.Dpi.Prelude 
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as L
-import Data.Time
 
 #include <dpi.h>
 
@@ -52,6 +51,26 @@ success = {#const DPI_SUCCESS #}
 {#enum SubscrProtocol      as ^ {underscoreToCase} deriving (Eq, Show) #}
 {#enum SubscrQOS           as ^ {underscoreToCase} deriving (Eq, Show) #}
 {#enum Visibility          as ^ {underscoreToCase} deriving (Eq, Show) #}
+
+#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+data SubscrGroupingClass = SubscrGroupingClassTime deriving (Eq, Show)
+instance Enum SubscrGroupingClass where
+  toEnum {#const DPI_SUBSCR_GROUPING_CLASS_TIME #} = SubscrGroupingClassTime
+  toEnum _ = error "Value invalid"
+  fromEnum _ = {#const DPI_SUBSCR_GROUPING_CLASS_TIME #}
+
+data SubscrGroupingType 
+  = SubscrGroupingTypeSummary 
+  | SubscrGroupingTypeLast
+  deriving (Eq, Show)
+
+instance Enum SubscrGroupingType where
+  toEnum {#const DPI_SUBSCR_GROUPING_TYPE_SUMMARY #} = SubscrGroupingTypeSummary
+  toEnum {#const DPI_SUBSCR_GROUPING_TYPE_LAST    #} = SubscrGroupingTypeLast
+  toEnum _ = error "Value invalid"
+  fromEnum SubscrGroupingTypeSummary = {#const DPI_SUBSCR_GROUPING_TYPE_SUMMARY #}
+  fromEnum SubscrGroupingTypeLast    = {#const DPI_SUBSCR_GROUPING_TYPE_LAST    #}
+#endif
 
 -- Handler 
 {#pointer *Conn       as DPI_Conn       foreign newtype #}
@@ -330,35 +349,35 @@ data DataValue
   | DataBFile          !(Ptr DPI_Lob)
   | DataBoolean        !Bool
   | DataBlob           !(Ptr DPI_Lob)
-  | DataChar           !Text
+  | DataChar           !Data_Bytes
   | DataClob           !(Ptr DPI_Lob)
-  | DataDate           !UTCTime
-  | DataIntervalDs     !DiffTime
+  | DataDate           !Data_Timestamp
+  | DataIntervalDs     !Data_IntervalDS
   | DataIntervalYm     !Data_IntervalYM
-  | DataLongRaw        !Text
-  | DataLongVarchar    !Text
+  | DataLongRaw        !Data_Bytes
+  | DataLongVarchar    !Data_Bytes
   | DataDouble         !CDouble
   | DataFloat          !CFloat
   | DataInt            !Int64
   | DataUint           !Word64
-  | DataNChar          !Text
+  | DataNChar          !Data_Bytes
   | DataNClob          !(Ptr DPI_Lob)
   | DataNumDouble      !CDouble
-  | DataNumBytes       !Text
+  | DataNumBytes       !Data_Bytes
   | DataNumInt         !Int64
   | DataNumUint        !Word64
-  | DataNVarchar       !Text
+  | DataNVarchar       !Data_Bytes
   | DataObject         !(Ptr DPI_Object)
-  | DataRaw            !Text
+  | DataRaw            !Data_Bytes
   | DataRowid          !(Ptr DPI_Rowid)
   | DataStmt           !(Ptr DPI_Stmt)
-  | DataTimestamp      !UTCTime
+  | DataTimestamp      !Data_Timestamp
   | DataTimestampD     !CDouble
-  | DataTimestampLtz   !UTCTime
+  | DataTimestampLtz   !Data_Timestamp
   | DataTimestampLtzD  !CDouble
-  | DataTimestampTz    !UTCTime
+  | DataTimestampTz    !Data_Timestamp
   | DataTimestampTzD   !CDouble
-  | DataVarchar        !Text
+  | DataVarchar        !Data_Bytes
   deriving Show
 
 {-# INLINE newData #-}
@@ -406,9 +425,6 @@ newData d = do
 
 newtype Data = Data (NativeTypeNum -> OracleTypeNum -> IO DataValue)
 
-picoResolution :: Integer
-picoResolution = 10 ^ 12
-
 instance Storable Data where
   sizeOf    _ = {#sizeof  Data #}
   alignment _ = {#alignof Data #}
@@ -416,18 +432,13 @@ instance Storable Data where
     f NativeTypeDouble OracleTypeNone >>=  go p
     where
       sLob p1 v1 = {#set Data -> value.asLOB        #} p1 v1
-      sByt p2 v2 = do
-        (b,bl) <- newCStringLen $ T.unpack v2
-        e      <- fs "UTF-8"
+      sByt p2 Data_Bytes{..} = do
+        (b,bl) <- newCStringLen $ L.unpack bytes
+        e      <- fs encoding
         {#set Data -> value.asBytes.ptr      #} p2 b
         {#set Data -> value.asBytes.length   #} p2 (fromIntegral bl)
         {#set Data -> value.asBytes.encoding #} p2 e
-      sTmp p3 UTCTime{..} = do
-        let (year, month, day) = toGregorian utctDay
-            fs                 = diffTimeToPicoseconds utctDayTime
-            (t1,fsecond)       = fs `divMod` picoResolution
-            (t2,second)        = t1 `divMod` 60
-            (hour,minute)      = t2 `divMod` 60
+      sTmp p3 Data_Timestamp{..} = do
         {#set Data -> value.asTimestamp.year           #} p3 $ fromIntegral year
         {#set Data -> value.asTimestamp.month          #} p3 $ fromIntegral month
         {#set Data -> value.asTimestamp.day            #} p3 $ fromIntegral day
@@ -444,12 +455,7 @@ instance Storable Data where
       go p (DataChar          v) = sByt p v
       go p (DataClob          v) = sLob p v
       go p (DataDate          v) = sTmp p v
-      go p (DataIntervalDs    v) = do
-        let fs                 = diffTimeToPicoseconds v
-            (t1,fseconds)      = fs `divMod` picoResolution
-            (t2,seconds)       = t1 `divMod` 60
-            (t3,minutes)       = t2 `divMod` 60
-            (days,hours)       = t3 `divMod` 24
+      go p (DataIntervalDs    Data_IntervalDS{..}) = do
         {#set Data -> value.asIntervalDS.days     #} p $ fromIntegral days    
         {#set Data -> value.asIntervalDS.hours    #} p $ fromIntegral hours   
         {#set Data -> value.asIntervalDS.minutes  #} p $ fromIntegral minutes 
@@ -493,7 +499,8 @@ instance Storable Data where
         ptr      <- {#get Data -> value.asBytes.ptr      #} p
         length   <- {#get Data -> value.asBytes.length   #} p
         encoding <- {#get Data -> value.asBytes.encoding #} p >>= tb
-        T.pack <$> peekCStringLen (ptr, fromIntegral length)
+        bytes    <- L.pack <$> peekCStringLen (ptr, fromIntegral length)
+        return Data_Bytes{..}
       go p NativeTypeTimestamp  o = do
         year           <- {#get Data -> value.asTimestamp.year           #} p
         month          <- {#get Data -> value.asTimestamp.month          #} p
@@ -511,7 +518,7 @@ instance Storable Data where
         minutes  <- {#get Data -> value.asIntervalDS.minutes  #} p
         seconds  <- {#get Data -> value.asIntervalDS.seconds  #} p
         fseconds <- {#get Data -> value.asIntervalDS.fseconds #} p
-        return $ picosecondsToDiffTime $ (fromIntegral days * 24 * 3600 + fromIntegral hours * 3600 + fromIntegral minutes * 60 + fromIntegral seconds) * picoResolution + fromIntegral fseconds
+        return $ Data_IntervalDS{..}
       go p NativeTypeIntervalYm _ = DataIntervalYm <$> do
         years    <- {#get Data -> value.asIntervalYM.years    #} p
         months   <- {#get Data -> value.asIntervalYM.months   #} p
@@ -586,15 +593,13 @@ instance Storable Data_DataTypeInfo where
 
 {-# INLINE toTime #-}
 toTime :: OracleTypeNum -> Data_Timestamp -> DataValue
-toTime t Data_Timestamp{..} 
-  = let utctDay     = fromGregorian (fromIntegral year) (fromIntegral month) (fromIntegral day)
-        utctDayTime = picosecondsToDiffTime $ ((fromIntegral hour - fromIntegral tzHourOffset) * 3600 + (fromIntegral minute - fromIntegral tzMinuteOffset) * 60 + fromIntegral second) * picoResolution + fromIntegral fsecond
-        go OracleTypeDate         = DataDate
+toTime t v
+  = let go OracleTypeDate         = DataDate
         go OracleTypeTimestamp    = DataTimestamp
         go OracleTypeTimestampLtz = DataTimestampLtz
         go OracleTypeTimestampTz  = DataTimestampTz
         go _                      = DataTimestamp
-    in go t $ UTCTime {..}
+    in go t v
 
 
 data Data_EncodingInfo  = Data_EncodingInfo
@@ -706,15 +711,20 @@ instance Storable Data_ObjectTypeInfo where
     return Data_ObjectTypeInfo {..}
 
 data Data_PoolCreateParams  = Data_PoolCreateParams
-  { minSessions       :: !CUInt
-  , maxSessions       :: !CUInt
-  , sessionIncrement  :: !CUInt
-  , pingInterval      :: !CInt
-  , pingTimeout       :: !CInt
-  , homogeneous       :: !CInt
-  , externalAuth      :: !CInt
-  , getMode           :: !PoolGetMode
-  , outPoolName       :: !Text
+  { minSessions        :: !CUInt
+  , maxSessions        :: !CUInt
+  , sessionIncrement   :: !CUInt
+  , pingInterval       :: !CInt
+  , pingTimeout        :: !CInt
+  , homogeneous        :: !CInt
+  , externalAuth       :: !CInt
+  , getMode            :: !PoolGetMode
+  , outPoolName        :: !Text
+#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+  , timeout            :: !CUInt
+  , waitTimeout        :: !CUInt
+  , maxLifetimeSession :: !CUInt
+#endif
   } deriving Show
 
 instance Storable Data_PoolCreateParams where
@@ -733,17 +743,22 @@ instance Storable Data_PoolCreateParams where
     {#set PoolCreateParams -> outPoolName       #} p e
     {#set PoolCreateParams -> outPoolNameLength #} p (fromIntegral    elen)
   peek      p = do
-    minSessions       <- {#get PoolCreateParams -> minSessions       #} p
-    maxSessions       <- {#get PoolCreateParams -> maxSessions       #} p
-    sessionIncrement  <- {#get PoolCreateParams -> sessionIncrement  #} p
-    pingInterval      <- {#get PoolCreateParams -> pingInterval      #} p
-    pingTimeout       <- {#get PoolCreateParams -> pingTimeout       #} p
-    homogeneous       <- {#get PoolCreateParams -> homogeneous       #} p
-    externalAuth      <- {#get PoolCreateParams -> externalAuth      #} p
-    getMode           <- te <$> {#get PoolCreateParams -> getMode           #} p
-    outPoolName'      <- {#get PoolCreateParams -> outPoolName       #} p
-    outPoolNameLength <- {#get PoolCreateParams -> outPoolNameLength #} p
+    minSessions       <- {#get PoolCreateParams -> minSessions        #} p
+    maxSessions       <- {#get PoolCreateParams -> maxSessions        #} p
+    sessionIncrement  <- {#get PoolCreateParams -> sessionIncrement   #} p
+    pingInterval      <- {#get PoolCreateParams -> pingInterval       #} p
+    pingTimeout       <- {#get PoolCreateParams -> pingTimeout        #} p
+    homogeneous       <- {#get PoolCreateParams -> homogeneous        #} p
+    externalAuth      <- {#get PoolCreateParams -> externalAuth       #} p
+    getMode           <- te <$> {#get PoolCreateParams -> getMode     #} p
+    outPoolName'      <- {#get PoolCreateParams -> outPoolName        #} p
+    outPoolNameLength <- {#get PoolCreateParams -> outPoolNameLength  #} p
     outPoolName       <- ts outPoolName' outPoolNameLength
+#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+    timeout           <- {#get PoolCreateParams -> timeout            #} p
+    waitTimeout       <- {#get PoolCreateParams -> waitTimeout        #} p
+    maxLifetimeSession<- {#get PoolCreateParams -> maxLifetimeSession #} p
+#endif
     return Data_PoolCreateParams {..}
 
 data Data_QueryInfo = Data_QueryInfo
@@ -791,15 +806,16 @@ instance Storable Data_ShardingKeyColumn where
     value         <- go p nativeTypeNum oracleTypeNum
     return Data_ShardingKeyColumn {..}
     where
-      go p NativeTypeInt64      o = (gInt o  .fromInteger.toInteger) <$> {#get ShardingKeyColumn -> value.asInt64      #} p
-      go p NativeTypeUint64     o = (gUnt o .fromInteger.toInteger) <$> {#get ShardingKeyColumn -> value.asUint64     #} p
-      go p NativeTypeFloat      _ = DataFloat      <$> {#get ShardingKeyColumn -> value.asFloat      #} p
-      go p NativeTypeDouble     o = gDbl o     <$> {#get ShardingKeyColumn -> value.asDouble     #} p
-      go p NativeTypeBytes      o = gByt o       <$> do
+      go p NativeTypeInt64  o = (gInt o .fromInteger.toInteger) <$> {#get ShardingKeyColumn -> value.asInt64      #} p
+      go p NativeTypeUint64 o = (gUnt o .fromInteger.toInteger) <$> {#get ShardingKeyColumn -> value.asUint64     #} p
+      go p NativeTypeFloat  _ = DataFloat  <$> {#get ShardingKeyColumn -> value.asFloat      #} p
+      go p NativeTypeDouble o = gDbl o     <$> {#get ShardingKeyColumn -> value.asDouble     #} p
+      go p NativeTypeBytes  o = gByt o     <$> do
         ptr      <- {#get ShardingKeyColumn -> value.asBytes.ptr      #} p
         length   <- {#get ShardingKeyColumn -> value.asBytes.length   #} p
         encoding <- {#get ShardingKeyColumn -> value.asBytes.encoding #} p >>= tb
-        T.pack <$> peekCStringLen (ptr, fromIntegral length)
+        bytes    <- L.pack <$> peekCStringLen (ptr, fromIntegral length)
+        return Data_Bytes{..}
       go p NativeTypeTimestamp  t = do
         year           <- {#get ShardingKeyColumn -> value.asTimestamp.year           #} p
         month          <- {#get ShardingKeyColumn -> value.asTimestamp.month          #} p
@@ -817,7 +833,7 @@ instance Storable Data_ShardingKeyColumn where
         minutes  <- {#get ShardingKeyColumn -> value.asIntervalDS.minutes  #} p
         seconds  <- {#get ShardingKeyColumn -> value.asIntervalDS.seconds  #} p
         fseconds <- {#get ShardingKeyColumn -> value.asIntervalDS.fseconds #} p
-        return $ picosecondsToDiffTime $ (fromIntegral days * 24 * 3600 + fromIntegral hours * 3600 + fromIntegral minutes * 60 + fromIntegral seconds) * picoResolution + fromIntegral fseconds
+        return $ Data_IntervalDS{..}
       go p NativeTypeIntervalYm _ = DataIntervalYm <$> do
         years    <- {#get ShardingKeyColumn -> value.asIntervalYM.years    #} p
         months   <- {#get ShardingKeyColumn -> value.asIntervalYM.months   #} p
@@ -861,6 +877,12 @@ data Data_SubscrCreateParams = Data_SubscrCreateParams
   , callback            :: !(FunPtr (Ptr () -> PtrSubscrMessage -> IO ()))
   , callbackContext     :: !(Ptr ())
   , recipientName       :: !Text
+#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+  , ipAddress           :: !Text
+  , groupingClass       :: !SubscrGroupingClass
+  , groupingValue       :: !CUInt
+  , groupingType        :: !SubscrGroupingType
+#endif
   } deriving Show
 
 instance Storable Data_SubscrCreateParams where
@@ -868,20 +890,28 @@ instance Storable Data_SubscrCreateParams where
   alignment _ = {#alignof SubscrCreateParams #}
   poke   _  _ = noImplement
   peek      p = do
-    subscrNamespace     <- te    <$>                {#get SubscrCreateParams  -> subscrNamespace #} p
-    protocol            <- te    <$>                {#get SubscrCreateParams  -> protocol        #} p
-    qos                 <- te    <$>                {#get SubscrCreateParams  -> qos             #} p
-    operations          <- {#get SubscrCreateParams ->    operations          #} p
-    portNumber          <- {#get SubscrCreateParams ->    portNumber          #} p
-    timeout             <- {#get SubscrCreateParams ->    timeout             #} p
-    name'               <- {#get SubscrCreateParams ->    name                #} p
-    nameLength          <- {#get SubscrCreateParams ->    nameLength          #} p
-    callback            <- {#get SubscrCreateParams ->    callback            #} p
-    callbackContext     <- {#get SubscrCreateParams ->    callbackContext     #} p
-    recipientName'      <- {#get SubscrCreateParams ->    recipientName       #} p
-    recipientNameLength <- {#get SubscrCreateParams ->    recipientNameLength #} p
+    subscrNamespace     <- te <$> {#get SubscrCreateParams  -> subscrNamespace #} p
+    protocol            <- te <$> {#get SubscrCreateParams  -> protocol        #} p
+    qos                 <- te <$> {#get SubscrCreateParams  -> qos             #} p
+    operations          <- {#get SubscrCreateParams ->     operations          #} p
+    portNumber          <- {#get SubscrCreateParams ->     portNumber          #} p
+    timeout             <- {#get SubscrCreateParams ->     timeout             #} p
+    name'               <- {#get SubscrCreateParams ->     name                #} p
+    nameLength          <- {#get SubscrCreateParams ->     nameLength          #} p
+    callback            <- {#get SubscrCreateParams ->     callback            #} p
+    callbackContext     <- {#get SubscrCreateParams ->     callbackContext     #} p
+    recipientName'      <- {#get SubscrCreateParams ->     recipientName       #} p
+    recipientNameLength <- {#get SubscrCreateParams ->     recipientNameLength #} p
     name                <- ts name'          nameLength
     recipientName       <- ts recipientName' recipientNameLength
+#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+    ipAddress'          <- {#get SubscrCreateParams -> ipAddress            #} p
+    ipAddressLength     <- {#get SubscrCreateParams -> ipAddressLength      #} p
+    ipAddress           <- ts ipAddress' ipAddressLength
+    groupingClass       <- te <$> {#get SubscrCreateParams -> groupingClass #} p
+    groupingValue       <- {#get SubscrCreateParams -> groupingValue #} p
+    groupingType        <- te <$> {#get SubscrCreateParams -> groupingType  #} p
+#endif
     return Data_SubscrCreateParams {..}
 
 data Data_SubscrMessage = Data_SubscrMessage
@@ -894,6 +924,11 @@ data Data_SubscrMessage = Data_SubscrMessage
   , errorInfo    :: !PtrErrorInfo
   , txId         :: !(Ptr ())
   , txIdLength   :: !CUInt
+#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+  , registered   :: !CInt
+  , queueName    :: !Text
+  , consumerName :: !Text
+#endif
   } deriving Show
 
 instance Storable Data_SubscrMessage where
@@ -912,6 +947,15 @@ instance Storable Data_SubscrMessage where
     txId         <- {#get SubscrMessage -> txId         #} p
     txIdLength   <- {#get SubscrMessage -> txIdLength   #} p
     dbName       <- ts dbName' dbNameLength
+#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+    registered         <- {#get SubscrMessage -> registered          #} p
+    queueName'         <- {#get SubscrMessage -> queueName          #} p
+    queueNameLength    <- {#get SubscrMessage -> queueNameLength    #} p
+    queueName          <- ts queueName' queueNameLength
+    consumerName'      <- {#get SubscrMessage -> consumerName       #} p
+    consumerNameLength <- {#get SubscrMessage -> consumerNameLength #} p
+    consumerName       <- ts consumerName' consumerNameLength
+#endif
     return Data_SubscrMessage {..}
 
 data Data_SubscrMessageQuery = Data_SubscrMessageQuery
@@ -1050,6 +1094,8 @@ libContextGetError               = {#call Context_getError               #}
 {-# INLINE libConnSetStmtCacheSize    #-}
 {-# INLINE libConnShutdownDatabase    #-}
 {-# INLINE libConnStartupDatabase     #-}
+{-# INLINE libConnSubscribe           #-}
+{-# INLINE libConnUnsubscribe         #-}
 libConnAddRef              = {#call Conn_addRef              #}
 libConnBeginDistribTrans   = {#call Conn_beginDistribTrans   #}
 libConnBreakExecution      = {#call Conn_breakExecution      #}
@@ -1091,6 +1137,13 @@ libConnSetModule           = {#call Conn_setModule           #}
 libConnSetStmtCacheSize    = {#call Conn_setStmtCacheSize    #}
 libConnShutdownDatabase    = {#call Conn_shutdownDatabase    #}
 libConnStartupDatabase     = {#call Conn_startupDatabase     #}
+#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+libConnSubscribe           = {#call Conn_subscribe           #}
+libConnUnsubscribe         = {#call Conn_unsubscribe         #}
+#else 
+libConnSubscribe           = error "No implement until 2.4.0"
+libConnUnsubscribe         = error "No implement until 2.4.0"
+#endif
 
 -- Data 
 {-# INLINE libDataGetDouble     #-}
@@ -1350,6 +1403,8 @@ libObjectTypeRelease       = {#call ObjectType_release       #}
 {-# INLINE libPoolSetMaxLifetimeSession #-}
 {-# INLINE libPoolSetStmtCacheSize      #-}
 {-# INLINE libPoolSetTimeout            #-}
+{-# INLINE libPoolGetWaitTimeout        #-}
+{-# INLINE libPoolSetWaitTimeout        #-}
 libPoolAcquireConnection     = {#call Pool_acquireConnection     #}
 libPoolAddRef                = {#call Pool_addRef                #}
 libPoolClose                 = {#call Pool_close                 #}
@@ -1366,6 +1421,13 @@ libPoolSetGetMode            = {#call Pool_setGetMode            #}
 libPoolSetMaxLifetimeSession = {#call Pool_setMaxLifetimeSession #}
 libPoolSetStmtCacheSize      = {#call Pool_setStmtCacheSize      #}
 libPoolSetTimeout            = {#call Pool_setTimeout            #}
+#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+libPoolGetWaitTimeout        = {#call Pool_getWaitTimeout       #}
+libPoolSetWaitTimeout        = {#call Pool_setWaitTimeout       #}
+#else 
+libPoolGetWaitTimeout        = error "No implement until 2.4.0"
+libPoolSetWaitTimeout        = error "No implement until 2.4.0"
+#endif
 
 -- Stmt
 {-# INLINE libStmtAddRef             #-}
@@ -1468,3 +1530,10 @@ libVarSetFromObject         = {#call Var_setFromObject         #}
 libVarSetFromRowid          = {#call Var_setFromRowid          #}
 libVarSetFromStmt           = {#call Var_setFromStmt           #}
 libVarSetNumElementsInArray = {#call Var_setNumElementsInArray #}
+#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+libVarGetReturnedData       = {#call Var_getReturnedData       #}
+use2_4_0                    = True
+#else 
+libVarGetReturnedData       = error "No implement until 2.4.0"
+use2_4_0                    = False
+#endif
