@@ -13,6 +13,7 @@ import           Database.Dpi.Internal
 import           Database.Dpi.Prelude
 
 import           Control.Exception
+import qualified Data.ByteString.Char8 as B
 import qualified Data.Text             as T
 
 {-# INLINE isOk #-}
@@ -21,7 +22,7 @@ isOk = (== success)
 
 data DpiException
   = ErrorInfoException Data_ErrorInfo
-  | DpiException Text
+  | DpiException String
   deriving Show
 
 instance Exception DpiException
@@ -50,8 +51,11 @@ class ToString s where
 instance ToString String where
   toString = id
 
-instance ToString Text where
+instance ToString T.Text where
    toString = T.unpack
+
+instance ToString ByteString where
+   toString = B.unpack
 
 {-# INLINE inVar #-}
 inVar :: a -> (a -> r) -> r
@@ -89,9 +93,9 @@ inPtr init f = re $ withPtrs $ \c -> init c >> return (f c)
 outBool :: IO CInt -> IO Bool
 outBool = (isOk <$>)
 
-{-# INLINE setText #-}
-setText :: (Ptr a -> Ptr CChar -> CUInt -> IO CInt) -> HasCxtPtr a -> Text -> IO Bool
-setText f (cxt,p) !s = f p & inStrLen s & outBool
+{-# INLINE setString #-}
+setString :: ToString s => (Ptr a -> Ptr CChar -> CUInt -> IO CInt) -> HasCxtPtr a -> s -> IO Bool
+setString f (cxt,p) !s = f p & inStrLen s & outBool
 
 -- | Returns error information for the last error that was raised by the library.
 -- This function must be called with the same thread that generated the error.
@@ -163,9 +167,9 @@ runInt f !p = fromIntegral <$> runVar f p
 rreaybeInt :: (Storable i, Integral i, Integral n) => (Ptr a -> Ptr i -> IO CInt) -> HasCxtPtr a -> IO (Maybe n)
 rreaybeInt f !p = fmap fromIntegral <$> runMaybeVar f p
 
-{-# INLINE runText #-}
-runText :: (Ptr a -> Ptr (Ptr CChar) -> Ptr CUInt -> IO CInt) -> HasCxtPtr a -> IO Text
-runText f (cxt,!p) = f p & out2Value cxt peekCStrLen
+{-# INLINE runByteString #-}
+runByteString :: (Ptr a -> Ptr (Ptr CChar) -> Ptr CUInt -> IO CInt) -> HasCxtPtr a -> IO ByteString
+runByteString f (cxt,!p) = f p & out2Value cxt peekCStrLen
 
 {-# INLINE runVar #-}
 runVar :: Storable i => (Ptr a -> Ptr i -> IO CInt) -> HasCxtPtr a -> IO i
@@ -194,11 +198,11 @@ peekEnum !p = te <$> peek p
 -- peekCStrLen
 
 {-# INLINE peekCStrLen #-}
-peekCStrLen :: (Ptr (Ptr CChar), Ptr CUInt) -> IO Text
-peekCStrLen (!p,!plen) = join $ ts <$> peek p <*> peek plen
+peekCStrLen :: (Ptr (Ptr CChar), Ptr CUInt) -> IO ByteString
+peekCStrLen (!p,!plen) = ((,) <$> peek p <*> (fromIntegral <$>peek plen)) >>= B.packCStringLen
 
 {-# INLINE peekMaybeCStrLen #-}
-peekMaybeCStrLen :: (Ptr (Ptr CChar), Ptr CUInt) -> IO (Maybe Text)
+peekMaybeCStrLen :: (Ptr (Ptr CChar), Ptr CUInt) -> IO (Maybe ByteString)
 peekMaybeCStrLen ps@(p,_) | p == nullPtr = return Nothing
                           | otherwise    = Just <$> peekCStrLen ps
 

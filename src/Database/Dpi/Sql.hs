@@ -8,12 +8,13 @@ import           Database.Dpi
 import           Database.Dpi.Field
 
 
-import           Control.Monad      (when)
+import           Control.Monad         (when)
+import           Data.ByteString       (ByteString)
+import           Data.ByteString.Char8 (unpack)
 import           Data.Maybe
-import           Data.Text          (Text, unpack)
 import           System.Environment
 
-getLanguage :: OracleConfig -> IO Text
+getLanguage :: OracleConfig -> IO ByteString
 getLanguage conf = withContext $ \cxt -> withConnection cxt conf id id $ \conn -> do
   withStatement conn False "SELECT USERENV ('language') FROM DUAL" $ \st -> do
     r     <- executeStatement st ModeExecDefault
