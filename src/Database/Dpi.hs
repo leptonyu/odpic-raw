@@ -122,14 +122,16 @@ module Database.Dpi
   , getContextError
   ) where
 
+import           Database.Dpi.Field
 import           Database.Dpi.Internal
 import           Database.Dpi.Prelude
 import           Database.Dpi.Util
 
 import           Control.Exception
+import qualified Data.ByteString       as B
+import qualified Data.ByteString.Char8 as BC
 import           Data.Maybe            (fromMaybe)
 import qualified Data.Text             as T
-import qualified Data.Text.Lazy        as TL
 
 -- * Context Interface
 
@@ -181,10 +183,12 @@ getClientVersion p = libContextGetClientVersion p & outValue p peek
 
 -- | Oracle Configuration
 data OracleConfig = OracleConfig
-  { username :: Text -- ^ the name of the user used for authenticating the user
-  , password :: Text -- ^ the password to use for authenticating the user
-  , connstr  :: Text -- ^ the connect string identifying the database to which a connection is to be established
+  { username :: ByteString -- ^ the name of the user used for authenticating the user
+  , password :: ByteString -- ^ the password to use for authenticating the user
+  , connstr  :: ByteString -- ^ the connect string identifying the database to which a connection is to be established
   } deriving Show
+
+type SQL = T.Text
 
 -- | Creates a standalone connection to a database or acquires a connection from a session pool and returns a reference to the connection.
 {-# INLINE createConnection #-}
@@ -252,8 +256,8 @@ withConnection p conf hccp hccp2
 beginDistributedTransaction
   :: PtrConn -- ^ Connection
   -> Int64   -- ^  the identifier of the format of the XID. A value of -1 indicates that the entire XID is null.
-  -> Text    -- ^  the global transaction id of the XID as a byte string. The maximum length permitted is 64 bytes.
-  -> Text    -- ^ the branch id of the XID as a byte string. The maximum length permitted is 64 bytes.
+  -> ByteString    -- ^  the global transaction id of the XID as a byte string. The maximum length permitted is 64 bytes.
+  -> ByteString    -- ^ the branch id of the XID as a byte string. The maximum length permitted is 64 bytes.
   -> IO Bool
 beginDistributedTransaction p formatId transId branchId
   = libConnBeginDistribTrans (snd p) (fromIntegral formatId)
@@ -271,8 +275,8 @@ prepareDistributedTransaction (cxt,p) = libConnPrepareDistribTrans p & outValue 
 
 -- | Returns the current schema that is being used by the connection.
 {-# INLINE getCurrentSchema #-}
-getCurrentSchema :: PtrConn -> IO Text
-getCurrentSchema = runText libConnGetCurrentSchema
+getCurrentSchema :: PtrConn -> IO ByteString
+getCurrentSchema = runByteString libConnGetCurrentSchema
 
 -- | Sets the current schema to be used on the connection.
 -- This has the same effect as the SQL statement ALTER SESSION SET CURRENT_SCHEMA.
@@ -280,44 +284,44 @@ getCurrentSchema = runText libConnGetCurrentSchema
 -- If the new schema name does not exist, the same error is returned as when the alter session statement is executed.
 -- The new schema name is placed before database objects in statement that you execute that do not already have a schema.
 {-# INLINE setCurrentSchema #-}
-setCurrentSchema :: PtrConn -> Text -> IO Bool
-setCurrentSchema = setText libConnSetCurrentSchema
+setCurrentSchema :: PtrConn -> ByteString -> IO Bool
+setCurrentSchema = setString libConnSetCurrentSchema
 
 -- | Returns the edition that is being used by the connection.
 {-# INLINE getEdition #-}
-getEdition :: PtrConn -> IO Text
-getEdition = runText libConnGetEdition
+getEdition :: PtrConn -> IO ByteString
+getEdition = runByteString libConnGetEdition
 
 -- | Returns the external name that is being used by the connection. This value is used when logging distributed transactions.
 {-# INLINE getExternalName #-}
-getExternalName :: PtrConn -> IO Text
-getExternalName = runText libConnGetExternalName
+getExternalName :: PtrConn -> IO ByteString
+getExternalName = runByteString libConnGetExternalName
 
 -- | Sets the external name that is being used by the connection. This value is used when logging distributed transactions.
 {-# INLINE setExternalName #-}
-setExternalName :: PtrConn -> Text -> IO Bool
-setExternalName = setText libConnSetExternalName
+setExternalName :: PtrConn -> ByteString -> IO Bool
+setExternalName = setString libConnSetExternalName
 
 -- | Returns the internal name that is being used by the connection. This value is used when logging distributed transactions.
 {-# INLINE getInternalName #-}
-getInternalName :: PtrConn -> IO Text
-getInternalName = runText libConnGetInternalName
+getInternalName :: PtrConn -> IO ByteString
+getInternalName = runByteString libConnGetInternalName
 
 -- | Sets the internal name that is being used by the connection. This value is used when logging distributed transactions.
 {-# INLINE setInternalName #-}
-setInternalName :: PtrConn -> Text -> IO Bool
-setInternalName = setText libConnSetInternalName
+setInternalName :: PtrConn -> ByteString -> IO Bool
+setInternalName = setString libConnSetInternalName
 
 -- | Returns the logical transaction id for the connection.
 -- This value is used in Transaction Guard to determine if the last failed call was completed
   -- and if the transaction was committed using the procedure call dbms_app_cont.get_ltxid_outcome().
 {-# INLINE getLTXID #-}
-getLTXID :: PtrConn -> IO Text
-getLTXID = runText libConnGetLTXID
+getLTXID :: PtrConn -> IO ByteString
+getLTXID = runByteString libConnGetLTXID
 
 -- | Returns the version information of the Oracle Database to which the connection has been made.
 {-# INLINE getServerVersion #-}
-getServerVersion :: PtrConn -> IO (Text, Data_VersionInfo)
+getServerVersion :: PtrConn -> IO (ByteString, Data_VersionInfo)
 getServerVersion (cxt,p) = libConnGetServerVersion p & out3Value cxt go
   where
     {-# INLINE go #-}
@@ -326,7 +330,7 @@ getServerVersion (cxt,p) = libConnGetServerVersion p & out3Value cxt go
 -- | Looks up an object type by name in the database and returns a reference to it.
 -- The reference should be released as soon as it is no longer needed.
 {-# INLINE getObjectType #-}
-getObjectType :: PtrConn -> Text -> IO PtrObjectType
+getObjectType :: PtrConn -> ByteString -> IO PtrObjectType
 getObjectType p name
   = libConnGetObjectType
     & inCxtPtr p
@@ -354,35 +358,35 @@ setStmtCacheSize (cxt,p) size = libConnSetStmtCacheSize p & inInt size & outBool
 -- This is one of the end-to-end tracing attributes that can be tracked in database views,
 -- shown in audit trails and seen in tools such as Enterprise Manager.
 {-# INLINE setClientInfo #-}
-setClientInfo :: PtrConn -> Text -> IO Bool
-setClientInfo = setText libConnSetClientInfo
+setClientInfo :: PtrConn -> ByteString -> IO Bool
+setClientInfo = setString libConnSetClientInfo
 
 -- | Sets the client identifier attribute on the connection.
 -- This is one of the end-to-end tracing attributes that can be tracked in database views,
 -- shown in audit trails and seen in tools such as Enterprise Manager.
 {-# INLINE setClientIdentifier #-}
-setClientIdentifier :: PtrConn -> Text -> IO Bool
-setClientIdentifier = setText libConnSetClientIdentifier
+setClientIdentifier :: PtrConn -> ByteString -> IO Bool
+setClientIdentifier = setString libConnSetClientIdentifier
 
 -- | Sets the action attribute on the connection. This is one of the end-to-end tracing attributes
 -- that can be tracked in database views, shown in audit trails and seen in tools such as Enterprise Manager.
 {-# INLINE setAction #-}
-setAction :: PtrConn -> Text -> IO Bool
-setAction = setText libConnSetAction
+setAction :: PtrConn -> ByteString -> IO Bool
+setAction = setString libConnSetAction
 
 -- | Sets the database operation attribute on the connection.
 -- This is one of the end-to-end tracing attributes that can be tracked in database views,
 -- shown in audit trails and seen in tools such as Enterprise Manager.
 {-# INLINE setDbOp #-}
-setDbOp :: PtrConn -> Text -> IO Bool
-setDbOp = setText libConnSetDbOp
+setDbOp :: PtrConn -> ByteString -> IO Bool
+setDbOp = setString libConnSetDbOp
 
 -- | Sets the module attribute on the connection.
 -- This is one of the end-to-end tracing attributes that can be tracked in database views,
 -- shown in audit trails and seen in tools such as Enterprise Manager.
 {-# INLINE setModule #-}
-setModule :: PtrConn -> Text -> IO Bool
-setModule = setText libConnSetModule
+setModule :: PtrConn -> ByteString -> IO Bool
+setModule = setString libConnSetModule
 
 -- | Returns the OCI service context handle in use by the connection.
 {-# INLINE getHandler #-}
@@ -407,9 +411,9 @@ breakException = runBool libConnBreakExecution
 {-# INLINE changePassword #-}
 changePassword
   :: PtrConn -- ^ Connection
-  -> Text    -- ^ the name of the user whose password is to be changed
-  -> Text    -- ^ the old password of the user whose password is to be changed
-  -> Text    -- ^ the new password of the user whose password is to be changed
+  -> ByteString    -- ^ the name of the user whose password is to be changed
+  -> ByteString    -- ^ the old password of the user whose password is to be changed
+  -> ByteString    -- ^ the new password of the user whose password is to be changed
   -> IO Bool
 changePassword (cxt,p) username oldPassword newPassword
   = libConnChangePassword p
@@ -466,9 +470,9 @@ poolAddRef = runBool libPoolAddRef
 {-# INLINE createPool #-}
 createPool
   :: PtrContext -- ^ Context
-  -> Text -- ^ the name of the user used for authenticating the user
-  -> Text -- ^ the password to use for authenticating the user
-  -> Text -- ^ the connect string identifying the database to which a connection is to be established
+  -> ByteString -- ^ the name of the user used for authenticating the user
+  -> ByteString -- ^ the password to use for authenticating the user
+  -> ByteString -- ^ the connect string identifying the database to which a connection is to be established
   -> (Data_CommonCreateParams -> Data_CommonCreateParams) -- ^ custom 'Data_CommonCreateParams'
   -> (Data_PoolCreateParams -> Data_PoolCreateParams)
   -> IO PtrPool
@@ -496,21 +500,17 @@ releasePool = runBool libPoolRelease
 -- | with pool
 withPool
   :: PtrContext -- ^ Context
-  -> Text -- ^ the name of the user used for authenticating the user
-  -> Text -- ^ the password to use for authenticating the user
-  -> Text -- ^ the connect string identifying the database to which a connection is to be established
-  -> Text -- ^ NLS_LANG encoding
-  -> Text -- ^ NLS_NCHAR encoding
+  -> ByteString -- ^ the name of the user used for authenticating the user
+  -> ByteString -- ^ the password to use for authenticating the user
+  -> ByteString -- ^ the connect string identifying the database to which a connection is to be established
   -> Int
   -> (PtrPool -> IO a) -- ^ action use connection
   -> IO a
-withPool p username password connstr lang nchar thread
+withPool p username password connstr thread
   = bracket
-      (createPool p username password connstr (set lang nchar) (setP thread))
+      (createPool p username password connstr id (setP thread))
       (\c -> closePool c ModePoolCloseDefault `finally` releasePool c)
   where
-    set l n v = v { encoding  = if T.null l then  encoding (v :: Data_CommonCreateParams) else l
-                  , nencoding = if T.null n then nencoding (v :: Data_CommonCreateParams) else n} :: Data_CommonCreateParams
     setP t  v = v { maxSessions = fromIntegral t, sessionIncrement = 1 } :: Data_PoolCreateParams
 
 -- | with pool provide a connection will released after action
@@ -626,8 +626,8 @@ prepareStatement
     -- If it is scrollable, 'scrollStatement' can be used to reposition the cursor;
     -- otherwise, rows are retrieved in order from the statement until the rows are exhausted.
     -- This value is ignored for statements that do not refer to a query.
-  -> Text       -- ^ SQL String, not allow to use multi lines or semicolon as end of sql.
-                -- use 'normalize' use normalize sql text.
+  -> SQL        -- ^ SQL String, not allow to use multi lines or semicolon as end of sql.
+                -- use 'normalize' use normalize sql ByteString.
   -> IO PtrStmt
 prepareStatement p scrollable sql
   = libConnPrepareStmt
@@ -639,13 +639,13 @@ prepareStatement p scrollable sql
 
 -- | Normalize SQL, replace newline characters with space characters. and remove semicolon in the end of sql
 {-# INLINE normalize #-}
-normalize :: Text -> Text
+normalize :: SQL -> SQL
 normalize = T.dropWhileEnd (==';')
           . T.strip
           . T.map (\c -> if c == '\n' || c == '\r' then ' ' else c)
 
 {-# INLINE escapeName #-}
-escapeName :: Text -> Text
+escapeName :: SQL -> SQL
 escapeName name = "\"" <> T.replace "\"" "\"\"" name <> "\""
 
 -- | Closes the statement and makes it unusable for further work immediately,
@@ -668,8 +668,8 @@ withStatement
     -- If it is scrollable, 'scrollStatement' can be used to reposition the cursor;
     -- otherwise, rows are retrieved in order from the statement until the rows are exhausted.
     -- This value is ignored for statements that do not refer to a query.
-  -> Text       -- ^ SQL String, not allow to use multi lines or semicolon as end of sql.
-                -- use 'normalize' use normalize sql text.
+  -> SQL        -- ^ SQL String, not allow to use multi lines or semicolon as end of sql.
+                -- use 'normalize' use normalize sql ByteString.
   -> (PtrStmt -> IO a)
   -> IO a
 withStatement p scrollable sql f
@@ -698,7 +698,7 @@ statementAddRef = runBool libStmtAddRef
 {-# INLINE bindByName #-}
 bindByName
   :: PtrStmt -- ^ Statement
-  -> Text    -- ^ a byte string in the encoding used for CHAR data giving the name of the placeholder which is to be bound.
+  -> ByteString    -- ^ a byte string in the encoding used for CHAR data giving the name of the placeholder which is to be bound.
   -> PtrVar  -- ^ a reference to the variable which is to be bound.
   -> IO Bool
 bindByName (cxt,p) name (_,var)
@@ -728,7 +728,7 @@ bindByPosition (cxt,p) pos (_,var)
 {-# INLINE bindValueByName #-}
 bindValueByName
   :: PtrStmt       -- ^ Statement
-  -> Text          -- ^ a byte string in the encoding used for CHAR data giving the name of the placeholder which is to be bound.
+  -> ByteString          -- ^ a byte string in the encoding used for CHAR data giving the name of the placeholder which is to be bound.
   -> DataValue     -- ^ Value
                    -- Once the statement has been executed, this new variable will be released.
   -> IO Bool
@@ -814,7 +814,7 @@ getBindCount = runInt libStmtGetBindCount
 
 -- | Returns the names of the unique bind variables in the prepared statement.
 {-# INLINE getBindNames #-}
-getBindNames :: PtrStmt -> IO [Text]
+getBindNames :: PtrStmt -> IO [ByteString]
 getBindNames ps@(cxt,p) = do
   c <- getBindCount ps
   alloca $ \pn  ->
@@ -826,7 +826,7 @@ getBindNames ps@(cxt,p) = do
           n  <- peek pn
           ac <- peekArray (fromIntegral n) pan
           al <- peek panl
-          mapM (`ts` al) ac
+          mapM (\c -> B.packCStringLen (c, fromIntegral al)) ac
         else throwContextError cxt
 
 -- | Returns information about the statement.
@@ -1103,9 +1103,9 @@ getLobDirectoryAndFileName (cxt,p) = libLobGetDirectoryAndFileName p & out4Value
       dlen <- peek pdlen
       n    <- peek pn
       nlen <- peek pnlen
-      fp   <- ts d dlen
-      name <- ts n nlen
-      return (T.unpack fp, T.unpack name)
+      fp   <- BC.unpack <$> B.packCStringLen (d,fromIntegral dlen)
+      name <- BC.unpack <$> B.packCStringLen (n,fromIntegral nlen)
+      return (fp, name)
 
 -- | Sets the directory alias name and file name for a BFILE type LOB.
 {-# INLINE setLobDirectoryAndFileName #-}
@@ -1130,7 +1130,7 @@ getLobSize = runInt libLobGetSize
 -- | Replaces all of the data in the LOB with the contents of the provided buffer.
 -- The LOB will first be cleared and then the provided data will be written.
 {-# INLINE setLobFromBytes #-}
-setLobFromBytes :: PtrLob -> Text -> IO Bool
+setLobFromBytes :: PtrLob -> ByteString -> IO Bool
 setLobFromBytes (cxt,p) buff
   = libLobSetFromBytes p
     & inStrLen buff
@@ -1140,7 +1140,7 @@ type BufferSize = Int64
 
 -- | Reads data from the LOB at the specified offset into the provided buffer.
 {-# INLINE readLobBytes #-}
-readLobBytes :: PtrLob -> Page -> BufferSize -> IO Text
+readLobBytes :: PtrLob -> Page -> BufferSize -> IO ByteString
 readLobBytes (cxt,p) (offset, num) bufferSize
   = libLobReadBytes p
     & inInt offset
@@ -1151,12 +1151,12 @@ readLobBytes (cxt,p) (offset, num) bufferSize
       set bs (pb,pblen) = poke pblen (fromIntegral bs)
       get    (pb,pblen) = do
         pl <- peek pblen
-        ts pb (fromIntegral pl)
+        B.packCStringLen (pb,fromIntegral pl)
 
 -- | Write data to the LOB at the specified offset using the provided buffer as the source.
 -- If multiple calls to this function are planned, the LOB should first be opened using the function 'openLob'.
 {-# INLINE writeLobBytes #-}
-writeLobBytes :: PtrLob -> PageOffset -> Text -> IO Bool
+writeLobBytes :: PtrLob -> PageOffset -> ByteString -> IO Bool
 writeLobBytes (cxt,p) size buff
   = libLobWriteBytes p
     & inInt size
@@ -1372,7 +1372,7 @@ releaseRowid = runBool libRowidRelease
 
 -- | Returns the sting (base64) representation of the rowid.
 {-# INLINE rowidGetStringValue #-}
-rowidGetStringValue :: PtrRowid -> IO Text
+rowidGetStringValue :: PtrRowid -> IO ByteString
 rowidGetStringValue (cxt,p) = libRowidGetStringValue p & out2Value cxt peekCStrLen
 
 -- * Data Interface
@@ -1392,13 +1392,13 @@ setBool :: PtrData -> Bool -> IO ()
 setBool p v = libDataSetBool p & inBool v
 
 -- | Returns a pointer to the value of the data when the native type is 'NativeTypeBytes'.
-getBytes :: PtrData -> IO Text
-getBytes p = (TL.toStrict . bytes) <$> (libDataGetBytes p >>= peek)
+getBytes :: PtrData -> IO ByteString
+getBytes p = libDataGetBytes p >>= peek >>= toByteString
 
 -- | Sets the value of the data when the native type is 'NativeTypeBytes'.
 -- Do not use this function when setting data for variables.
 -- Instead, use the function 'setVarFromBytes'.
-setBytes :: PtrData -> Text -> IO ()
+setBytes :: PtrData -> ByteString -> IO ()
 setBytes p v = libDataSetBytes p & inStrLen v
 
 -- | Returns the value of the data when the native type is 'NativeTypeDouble'.
@@ -1601,7 +1601,7 @@ getVarSizeInBytes = runInt libVarGetSizeInBytes
 -- In the case of the variable’s Oracle type being 'OracleTypeNumber',
 -- the byte string is converted to an Oracle number during the call to this function.
 {-# INLINE setVarFromBytes #-}
-setVarFromBytes :: PtrVar -> Int -> Text -> IO Bool
+setVarFromBytes :: PtrVar -> Int -> ByteString -> IO Bool
 setVarFromBytes (cxt,p) pos bytes
   = libVarSetFromBytes p
     & inInt pos
@@ -1650,11 +1650,11 @@ newDeqOptions p = libConnNewDeqOptions & inCxtPtr p & outCxtPtr p
 {-# INLINE deqObject #-}
 deqObject
   :: PtrConn         -- ^ a reference to the connection from which the message is to be dequeued
-  -> Text            -- ^ the name of the queue from which the message is to be dequeued
+  -> ByteString            -- ^ the name of the queue from which the message is to be dequeued
   -> PtrDeqOptions   -- ^ a reference to the dequeue options that should be used when dequeuing the message from the queue.
   -> PtrMsgProps     -- ^ a reference to the message properties that will be populated with information from the message that is dequeued.
   -> PtrObject       -- ^ a reference to the object which will be populated with the message that is dequeued.
-  -> IO (Maybe Text) -- ^ a pointer to a byte string which will be populated with the id of the message that is dequeued
+  -> IO (Maybe ByteString) -- ^ a pointer to a byte string which will be populated with the id of the message that is dequeued
 deqObject (cxt,p) queueName options props payload
   = libConnDeqObject p
     & inStrLen queueName
@@ -1680,8 +1680,8 @@ deqOptionsAddRef = runBool libDeqOptionsAddRef
 -- | Returns the condition that must be satisfied in order for a message to be dequeued.
 -- See function 'setDeqOptionsCondition' for more information.
 {-# INLINE getDeqOptionsCondition #-}
-getDeqOptionsCondition :: PtrDeqOptions -> IO Text
-getDeqOptionsCondition = runText libDeqOptionsGetCondition
+getDeqOptionsCondition :: PtrDeqOptions -> IO ByteString
+getDeqOptionsCondition = runByteString libDeqOptionsGetCondition
 
 -- | Sets the condition which must be true for messages to be dequeued.
 -- The condition must be a valid boolean expression similar to the where clause of a SQL query.
@@ -1689,33 +1689,33 @@ getDeqOptionsCondition = runText libDeqOptionsGetCondition
 -- User data properties must be prefixed with tab.user_data as a qualifier to indicate
 -- the specific column of the queue table that stores the message payload.
 {-# INLINE setDeqOptionsCondition #-}
-setDeqOptionsCondition :: PtrDeqOptions -> Text -> IO Bool
-setDeqOptionsCondition = setText libDeqOptionsSetCondition
+setDeqOptionsCondition :: PtrDeqOptions -> ByteString -> IO Bool
+setDeqOptionsCondition = setString libDeqOptionsSetCondition
 
 -- | Returns the name of the consumer that is dequeuing messages.
 -- See function 'setDeqOptionsConsumerName' for more information.
 {-# INLINE getDeqOptionsConsumerName #-}
-getDeqOptionsConsumerName :: PtrDeqOptions -> IO Text
-getDeqOptionsConsumerName = runText libDeqOptionsGetConsumerName
+getDeqOptionsConsumerName :: PtrDeqOptions -> IO ByteString
+getDeqOptionsConsumerName = runByteString libDeqOptionsGetConsumerName
 
 -- | Sets the name of the consumer which will be dequeuing messages.
 -- This value should only be set if the queue is set up for multiple consumers.
 {-# INLINE setDeqOptionsConsumerName #-}
-setDeqOptionsConsumerName :: PtrDeqOptions -> Text -> IO Bool
-setDeqOptionsConsumerName = setText libDeqOptionsSetConsumerName
+setDeqOptionsConsumerName :: PtrDeqOptions -> ByteString -> IO Bool
+setDeqOptionsConsumerName = setString libDeqOptionsSetConsumerName
 
 -- | Returns the correlation of the message to be dequeued.
 -- See function 'setDeqOptionsCorrelation' for more information.
 {-# INLINE getDeqOptionsCorrelation #-}
-getDeqOptionsCorrelation :: PtrDeqOptions -> IO Text
-getDeqOptionsCorrelation = runText libDeqOptionsGetCorrelation
+getDeqOptionsCorrelation :: PtrDeqOptions -> IO ByteString
+getDeqOptionsCorrelation = runByteString libDeqOptionsGetCorrelation
 
 -- | Sets the correlation of the message to be dequeued.
 -- Special pattern matching characters such as the percent sign (%) and the underscore (_) can be used.
 -- If multiple messages satisfy the pattern, the order of dequeuing is undetermined.
 {-# INLINE setDeqOptionsCorrelation #-}
-setDeqOptionsCorrelation :: PtrDeqOptions -> Text -> IO Bool
-setDeqOptionsCorrelation = setText libDeqOptionsSetCorrelation
+setDeqOptionsCorrelation :: PtrDeqOptions -> ByteString -> IO Bool
+setDeqOptionsCorrelation = setString libDeqOptionsSetCorrelation
 
 -- | Returns the mode that is to be used when dequeuing messages.
 {-# INLINE getDeqOptionsMode #-}
@@ -1729,13 +1729,13 @@ setDeqOptionsMode (cxt,p) mdm = libDeqOptionsSetMode p & inEnum mdm & outBool
 
 -- | Returns the identifier of the specific message that is to be dequeued.
 {-# INLINE getDeqOptionsMsgId #-}
-getDeqOptionsMsgId :: PtrDeqOptions -> IO Text
-getDeqOptionsMsgId = runText libDeqOptionsGetMsgId
+getDeqOptionsMsgId :: PtrDeqOptions -> IO ByteString
+getDeqOptionsMsgId = runByteString libDeqOptionsGetMsgId
 
 -- | Sets the identifier of the specific message to be dequeued.
 {-# INLINE setDeqOptionsMsgId #-}
-setDeqOptionsMsgId :: PtrDeqOptions -> Text -> IO Bool
-setDeqOptionsMsgId = setText libDeqOptionsSetMsgId
+setDeqOptionsMsgId :: PtrDeqOptions -> ByteString -> IO Bool
+setDeqOptionsMsgId = setString libDeqOptionsSetMsgId
 
 -- | Returns the position of the message that is to be dequeued.
 {-# INLINE getDeqOptionsNavigation #-}
@@ -1750,15 +1750,15 @@ setDeqOptionsNavigation (cxt,p) mdm = libDeqOptionsSetNavigation p & inEnum mdm 
 -- | Returns the transformation of the message to be dequeued.
 -- See function 'setDeqOptionsTransformation' for more information.
 {-# INLINE getDeqOptionsTransformation #-}
-getDeqOptionsTransformation :: PtrDeqOptions -> IO Text
-getDeqOptionsTransformation = runText libDeqOptionsGetTransformation
+getDeqOptionsTransformation :: PtrDeqOptions -> IO ByteString
+getDeqOptionsTransformation = runByteString libDeqOptionsGetTransformation
 
 -- | Sets the transformation of the message to be dequeued.
 -- The transformation is applied after the message is dequeued but before it is returned to the application.
 -- It must be created using DBMS_TRANSFORM.
 {-# INLINE setDeqOptionsTransformation #-}
-setDeqOptionsTransformation :: PtrDeqOptions -> Text -> IO Bool
-setDeqOptionsTransformation = setText libDeqOptionsSetTransformation
+setDeqOptionsTransformation :: PtrDeqOptions -> ByteString -> IO Bool
+setDeqOptionsTransformation = setString libDeqOptionsSetTransformation
 
 -- | Returns whether the message being dequeued is part of the current transaction or constitutes a transaction on its own.
 {-# INLINE getDeqOptionsVisibility #-}
@@ -1802,11 +1802,11 @@ newEnqOptions p = libConnNewEnqOptions & inCxtPtr p & outCxtPtr p
 {-# INLINE enqObject #-}
 enqObject
   :: PtrConn         -- ^ a reference to the connection from which the message is to be enqueued
-  -> Text            -- ^ the name of the queue from which the message is to be enqueued
+  -> ByteString            -- ^ the name of the queue from which the message is to be enqueued
   -> PtrEnqOptions   -- ^ a reference to the enqueue options that should be used when enqueued the message from the queue.
   -> PtrMsgProps     -- ^ a reference to the message properties that will be populated with information from the message that is enqueued.
   -> PtrObject       -- ^ a reference to the object which will be populated with the message that is enqueued.
-  -> IO (Maybe Text) -- ^ a pointer to a byte string which will be populated with the id of the message that is enqueued
+  -> IO (Maybe ByteString) -- ^ a pointer to a byte string which will be populated with the id of the message that is enqueued
 enqObject (cxt,p) queueName (_,options) (_,props) (_,payload)
   = libConnEnqObject p
     & inStrLen queueName
@@ -1832,15 +1832,15 @@ releaseEnqOptions = runBool libEnqOptionsRelease
 -- | Returns the transformation of the message to be enqueued.
 -- See function 'setEnqOptionsTransformation' for more information.
 {-# INLINE getEnqOptionsTransformation #-}
-getEnqOptionsTransformation :: PtrEnqOptions -> IO Text
-getEnqOptionsTransformation = runText libEnqOptionsGetTransformation
+getEnqOptionsTransformation :: PtrEnqOptions -> IO ByteString
+getEnqOptionsTransformation = runByteString libEnqOptionsGetTransformation
 
 -- | Sets the transformation of the message to be enqueued.
 -- The transformation is applied after the message is enqueued but before it is returned to the application.
 -- It must be created using DBMS_TRANSFORM.
 {-# INLINE setEnqOptionsTransformation #-}
-setEnqOptionsTransformation :: PtrEnqOptions -> Text -> IO Bool
-setEnqOptionsTransformation = setText libEnqOptionsSetTransformation
+setEnqOptionsTransformation :: PtrEnqOptions -> ByteString -> IO Bool
+setEnqOptionsTransformation = setString libEnqOptionsSetTransformation
 
 -- | Returns whether the message being enqueued is part of the current transaction or constitutes a transaction on its own.
 {-# INLINE getEnqOptionsVisibility #-}
@@ -1887,15 +1887,15 @@ releaseMsgProps = runBool libMsgPropsRelease
 
 -- | Returns the correlation supplied by the producer when the message was enqueued.
 {-# INLINE getMsgPropsCorrelation #-}
-getMsgPropsCorrelation :: PtrMsgProps -> IO Text
-getMsgPropsCorrelation = runText libMsgPropsGetCorrelation
+getMsgPropsCorrelation :: PtrMsgProps -> IO ByteString
+getMsgPropsCorrelation = runByteString libMsgPropsGetCorrelation
 
 -- | Sets the correlation of the message to be dequeued.
 -- Special pattern matching characters such as the percent sign (%) and the underscore (_) can be used.
 -- If multiple messages satisfy the pattern, the order of dequeuing is undetermined.
 {-# INLINE setMsgPropsCorrelation #-}
-setMsgPropsCorrelation :: PtrMsgProps -> Text -> IO Bool
-setMsgPropsCorrelation = setText libMsgPropsSetCorrelation
+setMsgPropsCorrelation :: PtrMsgProps -> ByteString -> IO Bool
+setMsgPropsCorrelation = setString libMsgPropsSetCorrelation
 
 -- | Returns the number of attempts that have been made to dequeue a message.
 {-# INLINE getMsgPropsNumAttempts #-}
@@ -1929,15 +1929,15 @@ getMsgPropsEnqTime = runVar libMsgPropsGetEnqTime
 -- | Returns the name of the queue to which the message is moved if it cannot be processed successfully.
 -- See function 'setMsgPropsExceptionQ' for more information.
 {-# INLINE getMsgPropsExceptionQ #-}
-getMsgPropsExceptionQ :: PtrMsgProps -> IO Text
-getMsgPropsExceptionQ = runText libMsgPropsGetExceptionQ
+getMsgPropsExceptionQ :: PtrMsgProps -> IO ByteString
+getMsgPropsExceptionQ = runByteString libMsgPropsGetExceptionQ
 
 -- | Sets the name of the queue to which the message is moved if it cannot be processed successfully.
 -- Messages are moved if the number of unsuccessful dequeue attempts has reached the maximum allowed number
 -- or if the message has expired. All messages in the exception queue are in the 'MsgStateExpired' state.
 {-# INLINE setMsgPropsExceptionQ #-}
-setMsgPropsExceptionQ :: PtrMsgProps -> Text -> IO Bool
-setMsgPropsExceptionQ = setText libMsgPropsSetExceptionQ
+setMsgPropsExceptionQ :: PtrMsgProps -> ByteString -> IO Bool
+setMsgPropsExceptionQ = setString libMsgPropsSetExceptionQ
 
 -- | Returns the number of seconds the message is available to be dequeued.
 -- See function 'setMsgPropsExpiration' for more information.
@@ -1957,13 +1957,13 @@ setMsgPropsExpiration (cxt,p) delay = libMsgPropsSetExpiration p & inInt delay &
 -- | Returns the id of the message in the last queue that generated this message.
 -- See function 'setMsgPropsOriginalMsgId' for more information.
 {-# INLINE getMsgPropsOriginalMsgId #-}
-getMsgPropsOriginalMsgId :: PtrMsgProps -> IO Text
-getMsgPropsOriginalMsgId = runText libMsgPropsGetOriginalMsgId
+getMsgPropsOriginalMsgId :: PtrMsgProps -> IO ByteString
+getMsgPropsOriginalMsgId = runByteString libMsgPropsGetOriginalMsgId
 
 -- | Sets the id of the message in the last queue that generated this message.
 {-# INLINE setMsgPropsOriginalMsgId #-}
-setMsgPropsOriginalMsgId :: PtrMsgProps -> Text -> IO Bool
-setMsgPropsOriginalMsgId = setText libMsgPropsSetOriginalMsgId
+setMsgPropsOriginalMsgId :: PtrMsgProps -> ByteString -> IO Bool
+setMsgPropsOriginalMsgId = setString libMsgPropsSetOriginalMsgId
 
 -- | Returns the priority assigned to the message.
 -- See function 'setMsgPropsPriority' for more information.
@@ -2056,7 +2056,7 @@ releaseSubscr = runBool libSubscrRelease
 {-# INLINE subscrPrepareStatement #-}
 subscrPrepareStatement
   :: PtrSubscr  -- ^  a reference to the subscription on which the statement is to be prepared for registration.
-  -> Text       -- ^ the SQL that is to be prepared
+  -> ByteString -- ^ the SQL that is to be prepared
   -> IO PtrStmt -- ^ a reference to the statement that was prepared
 subscrPrepareStatement p sql
   = libSubscrPrepareStmt

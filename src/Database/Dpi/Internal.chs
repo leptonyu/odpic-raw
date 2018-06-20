@@ -6,10 +6,11 @@
 
 module Database.Dpi.Internal where
 
-import Control.Exception
 import Database.Dpi.Prelude 
-import qualified Data.Text as T
-import qualified Data.Text.Lazy as L
+
+import Control.Exception
+import qualified Data.ByteString as B
+import Data.ByteString(ByteString)
 
 #include <dpi.h>
 
@@ -112,8 +113,8 @@ type PtrContext    = Ptr DPI_Context
 {#pointer *Timestamp  as Ptr_Timestamp  -> Data_Timestamp  #}
 
 data Data_Bytes = Data_Bytes
-  { bytes    :: L.Text
-  , encoding :: Text
+  { bytes    :: !CStringLen
+  , encoding :: !CString
   } deriving Show
 
 instance Storable Data_Bytes where
@@ -123,8 +124,8 @@ instance Storable Data_Bytes where
   peek      p = do
     ptr      <- {#get Bytes -> ptr      #} p
     length   <- {#get Bytes -> length   #} p
-    encoding <- {#get Bytes -> encoding #} p >>= tb
-    bytes    <- L.pack <$> peekCStringLen (ptr, fromIntegral length)
+    encoding <- {#get Bytes -> encoding #} p
+    let bytes = (ptr, fromIntegral length)
     return Data_Bytes {..}
 
 data Data_IntervalDS = Data_IntervalDS
@@ -211,9 +212,9 @@ instance Storable Data_Timestamp where
 {#pointer *VersionInfo        as PtrVersionInfo        -> Data_VersionInfo        #}
 
 data Data_AppContext  = Data_AppContext
-  { namespaceName       :: !Text
-  , name                :: !Text
-  , value               :: !Text
+  { namespaceName       :: !CStringLen
+  , name                :: !CStringLen
+  , value               :: !CStringLen
   } deriving Show
 
 instance Storable Data_AppContext where
@@ -227,59 +228,57 @@ instance Storable Data_AppContext where
     nameLength          <- {#get AppContext -> nameLength          #} p
     value'              <- {#get AppContext -> value               #} p
     valueLength         <- {#get AppContext -> valueLength         #} p
-    namespaceName <- ts namespaceName' namespaceNameLength
-    name          <- ts name'          nameLength
-    value         <- ts value'         valueLength
+    let namespaceName = (namespaceName', fromIntegral namespaceNameLength)
+        name          = (name',          fromIntegral nameLength)
+        value         = (value',         fromIntegral valueLength)
     return Data_AppContext {..}
 
 data Data_CommonCreateParams  = Data_CommonCreateParams
   { createMode       :: !CreateMode
-  , encoding         :: !Text
-  , nencoding        :: !Text
-  , edition          :: !Text
-  , driverName       :: !Text
+  , encoding         :: !CString
+  , nencoding        :: !CString
+  , edition          :: !CStringLen
+  , driverName       :: !CStringLen
   } deriving Show
 
 instance Storable Data_CommonCreateParams where
   sizeOf    _ = {#sizeof  CommonCreateParams #}
   alignment _ = {#alignof CommonCreateParams #}
   poke    p Data_CommonCreateParams{..} = do
-    pe       <- fs encoding  
-    pn       <- fs nencoding 
-    (e,elen) <- fb edition   
-    (d,dlen) <- fb driverName
+    let (e,elen) = edition   
+        (d,dlen) = driverName
     {#set CommonCreateParams -> createMode       #} p (fe createMode)
-    {#set CommonCreateParams -> encoding         #} p pe
-    {#set CommonCreateParams -> nencoding        #} p pn
+    {#set CommonCreateParams -> encoding         #} p encoding
+    {#set CommonCreateParams -> nencoding        #} p nencoding
     {#set CommonCreateParams -> edition          #} p e
     {#set CommonCreateParams -> editionLength    #} p (fromIntegral elen)
     {#set CommonCreateParams -> driverName       #} p d
     {#set CommonCreateParams -> driverNameLength #} p (fromIntegral dlen)
   peek      p = do
     createMode       <- te <$> {#get CommonCreateParams -> createMode       #} p
-    encoding         <- {#get CommonCreateParams -> encoding         #} p >>= tb
-    nencoding        <- {#get CommonCreateParams -> nencoding        #} p >>= tb
+    encoding         <- {#get CommonCreateParams -> encoding         #} p
+    nencoding        <- {#get CommonCreateParams -> nencoding        #} p
     edition'         <- {#get CommonCreateParams -> edition          #} p
     editionLength    <- {#get CommonCreateParams -> editionLength    #} p
     driverName'      <- {#get CommonCreateParams -> driverName       #} p
     driverNameLength <- {#get CommonCreateParams -> driverNameLength #} p
-    edition    <- ts edition'    editionLength
-    driverName <- ts driverName' driverNameLength
+    let edition    = (edition',    fromIntegral editionLength)
+        driverName = (driverName', fromIntegral driverNameLength)
     return Data_CommonCreateParams {..}
 
 data Data_ConnCreateParams  = Data_ConnCreateParams
   { authMode                   :: !AuthMode
-  , connectionClass            :: !Text
+  , connectionClass            :: !CStringLen
   , purity                     :: !Purity
-  , newPassword                :: !Text
+  , newPassword                :: !CStringLen
   , appContext                 :: !PtrAppContext
   , numAppContext              :: !CUInt
   , externalAuth               :: !CInt
   , externalHandle             :: !(Ptr ())
   , pool                       :: !(Ptr DPI_Pool)
-  , tag                        :: !Text
+  , tag                        :: !CStringLen
   , matchAnyTag                :: !CInt
-  , outTag                     :: !Text
+  , outTag                     :: !CStringLen
   , outTagFound                :: !CInt
   , shardingKeyColumns         :: !PtrShardingKeyColumn
   , numShardingKeyColumns      :: !CUChar
@@ -291,10 +290,10 @@ instance Storable Data_ConnCreateParams where
   sizeOf    _ = {#sizeof  ConnCreateParams #}
   alignment _ = {#alignof ConnCreateParams #}
   poke    p Data_ConnCreateParams{..} = do
-    (cc,cclen) <- fb connectionClass
-    (np,nplen) <- fb newPassword
-    (tg,tglen) <- fb tag
-    (og,oglen) <- fb outTag
+    let (cc,cclen) = connectionClass
+        (np,nplen) = newPassword
+        (tg,tglen) = tag
+        (og,oglen) = outTag
     {#set ConnCreateParams -> authMode                   #} p (fe authMode)                 
     {#set ConnCreateParams -> connectionClass            #} p cc           
     {#set ConnCreateParams -> connectionClassLength      #} p (fromIntegral cclen)     
@@ -338,10 +337,10 @@ instance Storable Data_ConnCreateParams where
     numShardingKeyColumns      <- {#get ConnCreateParams -> numShardingKeyColumns      #} p
     superShardingKeyColumns    <- {#get ConnCreateParams -> superShardingKeyColumns    #} p
     numSuperShardingKeyColumns <- {#get ConnCreateParams -> numSuperShardingKeyColumns #} p
-    connectionClass <- ts connectionClass' connectionClassLength
-    newPassword     <- ts newPassword'     newPasswordLength
-    tag             <- ts tag'             tagLength
-    outTag          <- ts outTag'          outTagLength
+    let connectionClass = (connectionClass', fromIntegral connectionClassLength)
+        newPassword     = (newPassword',     fromIntegral newPasswordLength)
+        tag             = (tag',             fromIntegral tagLength)
+        outTag          = (outTag',          fromIntegral outTagLength)
     return Data_ConnCreateParams {..}
 
 data DataValue
@@ -433,11 +432,10 @@ instance Storable Data where
     where
       sLob p1 v1 = {#set Data -> value.asLOB        #} p1 v1
       sByt p2 Data_Bytes{..} = do
-        (b,bl) <- newCStringLen $ L.unpack bytes
-        e      <- fs encoding
+        let (b,bl) = bytes
         {#set Data -> value.asBytes.ptr      #} p2 b
         {#set Data -> value.asBytes.length   #} p2 (fromIntegral bl)
-        {#set Data -> value.asBytes.encoding #} p2 e
+        {#set Data -> value.asBytes.encoding #} p2 encoding
       sTmp p3 Data_Timestamp{..} = do
         {#set Data -> value.asTimestamp.year           #} p3 $ fromIntegral year
         {#set Data -> value.asTimestamp.month          #} p3 $ fromIntegral month
@@ -498,8 +496,8 @@ instance Storable Data where
       go p NativeTypeBytes      o = gByt o         <$> do
         ptr      <- {#get Data -> value.asBytes.ptr      #} p
         length   <- {#get Data -> value.asBytes.length   #} p
-        encoding <- {#get Data -> value.asBytes.encoding #} p >>= tb
-        bytes    <- L.pack <$> peekCStringLen (ptr, fromIntegral length)
+        encoding <- {#get Data -> value.asBytes.encoding #} p
+        let bytes = (ptr, fromIntegral length)
         return Data_Bytes{..}
       go p NativeTypeTimestamp  o = do
         year           <- {#get Data -> value.asTimestamp.year           #} p
@@ -603,9 +601,9 @@ toTime t v
 
 
 data Data_EncodingInfo  = Data_EncodingInfo
-  { encoding              :: !Text
+  { encoding              :: !CString
   , maxBytesPerCharacter  :: !CInt
-  , nencoding             :: !Text
+  , nencoding             :: !CString
   , nmaxBytesPerCharacter :: !CInt
   } deriving Show
 
@@ -614,20 +612,20 @@ instance Storable Data_EncodingInfo where
   alignment _ = {#alignof EncodingInfo #}
   poke   _  _ = noImplement
   peek      p = do
-    encoding              <- {#get EncodingInfo -> encoding              #} p >>= tb
+    encoding              <- {#get EncodingInfo -> encoding              #} p
     maxBytesPerCharacter  <- {#get EncodingInfo -> maxBytesPerCharacter  #} p
-    nencoding             <- {#get EncodingInfo -> nencoding             #} p >>= tb
+    nencoding             <- {#get EncodingInfo -> nencoding             #} p
     nmaxBytesPerCharacter <- {#get EncodingInfo -> nmaxBytesPerCharacter #} p
     return Data_EncodingInfo {..}
 
 data Data_ErrorInfo  = Data_ErrorInfo
   { code          :: !CInt
   , offset        :: !CUShort
-  , message       :: !Text
-  , encoding      :: !Text
-  , fnName        :: !Text
-  , action        :: !Text
-  , sqlState      :: !Text
+  , message       :: !CStringLen
+  , encoding      :: !CString
+  , fnName        :: !CString
+  , action        :: !CString
+  , sqlState      :: !CString
   , isRecoverable :: !Bool
   } deriving Show
 
@@ -640,16 +638,16 @@ instance Storable Data_ErrorInfo where
     offset        <- {#get ErrorInfo -> offset        #} p
     message'      <- {#get ErrorInfo -> message       #} p
     messageLength <- {#get ErrorInfo -> messageLength #} p
-    encoding      <- {#get ErrorInfo -> encoding      #} p >>= tb
-    fnName        <- {#get ErrorInfo -> fnName        #} p >>= tb
-    action        <- {#get ErrorInfo -> action        #} p >>= tb
-    sqlState      <- {#get ErrorInfo -> sqlState      #} p >>= tb
+    encoding      <- {#get ErrorInfo -> encoding      #} p
+    fnName        <- {#get ErrorInfo -> fnName        #} p
+    action        <- {#get ErrorInfo -> action        #} p
+    sqlState      <- {#get ErrorInfo -> sqlState      #} p
     isRecoverable <- toBool <$> {#get ErrorInfo -> isRecoverable #} p
-    message       <- ts message' messageLength
+    let message    = (message', fromIntegral messageLength)
     return Data_ErrorInfo {..}
 
 data Data_ObjectAttrInfo  = Data_ObjectAttrInfo
-  { name       :: !Text
+  { name       :: !CStringLen
   , typeInfo   :: !Data_DataTypeInfo
   } deriving Show
 
@@ -672,12 +670,12 @@ instance Storable Data_ObjectAttrInfo where
       fsPrecision          <-        {#get ObjectAttrInfo -> typeInfo.fsPrecision          #} p
       objectType           <-        {#get ObjectAttrInfo -> typeInfo.objectType           #} p
       return Data_DataTypeInfo {..}
-    name       <- ts name' nameLength
+    let name       = (name', fromIntegral nameLength)
     return Data_ObjectAttrInfo {..}
 
 data Data_ObjectTypeInfo  = Data_ObjectTypeInfo
-  { schema          :: !Text
-  , name            :: !Text
+  { schema          :: !CStringLen
+  , name            :: !CStringLen
   , isCollection    :: !Bool
   , elementTypeInfo :: !Data_DataTypeInfo
   , numAttributes   :: !CUShort
@@ -706,8 +704,8 @@ instance Storable Data_ObjectTypeInfo where
       objectType           <-        {#get ObjectTypeInfo -> elementTypeInfo.objectType           #} p
       return Data_DataTypeInfo {..}
     numAttributes   <- {#get ObjectTypeInfo -> numAttributes   #} p
-    schema          <- ts schema' schemaLength
-    name            <- ts name'   nameLength
+    let schema       = (schema', fromIntegral schemaLength)
+        name         = (name',   fromIntegral nameLength)
     return Data_ObjectTypeInfo {..}
 
 data Data_PoolCreateParams  = Data_PoolCreateParams
@@ -719,7 +717,7 @@ data Data_PoolCreateParams  = Data_PoolCreateParams
   , homogeneous        :: !CInt
   , externalAuth       :: !CInt
   , getMode            :: !PoolGetMode
-  , outPoolName        :: !Text
+  , outPoolName        :: !CStringLen
 #if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
   , timeout            :: !CUInt
   , waitTimeout        :: !CUInt
@@ -731,7 +729,7 @@ instance Storable Data_PoolCreateParams where
   sizeOf    _ = {#sizeof  PoolCreateParams #}
   alignment _ = {#alignof PoolCreateParams #}
   poke      p Data_PoolCreateParams{..} = do
-    (e,elen) <- fb outPoolName   
+    let (e,elen) = outPoolName   
     {#set PoolCreateParams -> minSessions       #} p minSessions
     {#set PoolCreateParams -> maxSessions       #} p maxSessions
     {#set PoolCreateParams -> sessionIncrement  #} p sessionIncrement
@@ -753,7 +751,7 @@ instance Storable Data_PoolCreateParams where
     getMode           <- te <$> {#get PoolCreateParams -> getMode     #} p
     outPoolName'      <- {#get PoolCreateParams -> outPoolName        #} p
     outPoolNameLength <- {#get PoolCreateParams -> outPoolNameLength  #} p
-    outPoolName       <- ts outPoolName' outPoolNameLength
+    let outPoolName    = (outPoolName', fromIntegral outPoolNameLength)
 #if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
     timeout           <- {#get PoolCreateParams -> timeout            #} p
     waitTimeout       <- {#get PoolCreateParams -> waitTimeout        #} p
@@ -762,7 +760,7 @@ instance Storable Data_PoolCreateParams where
     return Data_PoolCreateParams {..}
 
 data Data_QueryInfo = Data_QueryInfo
-  { name       :: !Text
+  { name       :: !CStringLen
   , typeInfo   :: !Data_DataTypeInfo
   , nullOk     :: !Bool
   } deriving Show
@@ -787,7 +785,7 @@ instance Storable Data_QueryInfo where
       objectType           <-        {#get QueryInfo -> typeInfo.objectType           #} p
       return Data_DataTypeInfo {..}
     nullOk     <- toBool  <$> {#get QueryInfo -> nullOk     #} p
-    name       <- ts name' nameLength
+    let name    = (name', fromIntegral nameLength)
     return Data_QueryInfo {..}
 
 data Data_ShardingKeyColumn  = Data_ShardingKeyColumn
@@ -813,8 +811,8 @@ instance Storable Data_ShardingKeyColumn where
       go p NativeTypeBytes  o = gByt o     <$> do
         ptr      <- {#get ShardingKeyColumn -> value.asBytes.ptr      #} p
         length   <- {#get ShardingKeyColumn -> value.asBytes.length   #} p
-        encoding <- {#get ShardingKeyColumn -> value.asBytes.encoding #} p >>= tb
-        bytes    <- L.pack <$> peekCStringLen (ptr, fromIntegral length)
+        encoding <- {#get ShardingKeyColumn -> value.asBytes.encoding #} p
+        let bytes = (ptr, fromIntegral length)
         return Data_Bytes{..}
       go p NativeTypeTimestamp  t = do
         year           <- {#get ShardingKeyColumn -> value.asTimestamp.year           #} p
@@ -873,12 +871,12 @@ data Data_SubscrCreateParams = Data_SubscrCreateParams
   , operations          :: !CInt
   , portNumber          :: !CUInt
   , timeout             :: !CUInt
-  , name                :: !Text
+  , name                :: !CStringLen
   , callback            :: !(FunPtr (Ptr () -> PtrSubscrMessage -> IO ()))
   , callbackContext     :: !(Ptr ())
-  , recipientName       :: !Text
+  , recipientName       :: !CStringLen
 #if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
-  , ipAddress           :: !Text
+  , ipAddress           :: !CStringLen
   , groupingClass       :: !SubscrGroupingClass
   , groupingValue       :: !CUInt
   , groupingType        :: !SubscrGroupingType
@@ -902,12 +900,12 @@ instance Storable Data_SubscrCreateParams where
     callbackContext     <- {#get SubscrCreateParams ->     callbackContext     #} p
     recipientName'      <- {#get SubscrCreateParams ->     recipientName       #} p
     recipientNameLength <- {#get SubscrCreateParams ->     recipientNameLength #} p
-    name                <- ts name'          nameLength
-    recipientName       <- ts recipientName' recipientNameLength
+    let name          = (name',          fromIntegral nameLength)
+        recipientName = (recipientName', fromIntegral recipientNameLength)
 #if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
     ipAddress'          <- {#get SubscrCreateParams -> ipAddress            #} p
     ipAddressLength     <- {#get SubscrCreateParams -> ipAddressLength      #} p
-    ipAddress           <- ts ipAddress' ipAddressLength
+    let ipAddress       = (ipAddress', fromIntegral ipAddressLength)
     groupingClass       <- te <$> {#get SubscrCreateParams -> groupingClass #} p
     groupingValue       <- {#get SubscrCreateParams -> groupingValue #} p
     groupingType        <- te <$> {#get SubscrCreateParams -> groupingType  #} p
@@ -916,7 +914,7 @@ instance Storable Data_SubscrCreateParams where
 
 data Data_SubscrMessage = Data_SubscrMessage
   { eventType    :: !EventType
-  , dbName       :: !Text
+  , dbName       :: !CStringLen
   , tables       :: !PtrSubscrMessageTable
   , numTables    :: !CUInt
   , queries      :: !PtrSubscrMessageQuery
@@ -926,8 +924,8 @@ data Data_SubscrMessage = Data_SubscrMessage
   , txIdLength   :: !CUInt
 #if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
   , registered   :: !CInt
-  , queueName    :: !Text
-  , consumerName :: !Text
+  , queueName    :: !CStringLen
+  , consumerName :: !CStringLen
 #endif
   } deriving Show
 
@@ -946,15 +944,15 @@ instance Storable Data_SubscrMessage where
     errorInfo    <- {#get SubscrMessage -> errorInfo    #} p
     txId         <- {#get SubscrMessage -> txId         #} p
     txIdLength   <- {#get SubscrMessage -> txIdLength   #} p
-    dbName       <- ts dbName' dbNameLength
+    let dbName   = (dbName', fromIntegral dbNameLength)
 #if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
-    registered         <- {#get SubscrMessage -> registered          #} p
+    registered         <- {#get SubscrMessage -> registered         #} p
     queueName'         <- {#get SubscrMessage -> queueName          #} p
     queueNameLength    <- {#get SubscrMessage -> queueNameLength    #} p
-    queueName          <- ts queueName' queueNameLength
     consumerName'      <- {#get SubscrMessage -> consumerName       #} p
     consumerNameLength <- {#get SubscrMessage -> consumerNameLength #} p
-    consumerName       <- ts consumerName' consumerNameLength
+    let queueName      = (queueName', fromIntegral queueNameLength)
+        consumerName   = (consumerName',fromIntegral consumerNameLength)
 #endif
     return Data_SubscrMessage {..}
 
@@ -978,7 +976,7 @@ instance Storable Data_SubscrMessageQuery where
 
 data Data_SubscrMessageRow = Data_SubscrMessageRow
   { operation   :: !OpCode
-  , rowid       :: !Text
+  , rowid       :: !CStringLen
   } deriving Show
 
 instance Storable Data_SubscrMessageRow where
@@ -989,12 +987,12 @@ instance Storable Data_SubscrMessageRow where
     operation   <- te <$> {#get SubscrMessageRow -> operation  #} p
     rowid'      <- {#get SubscrMessageRow -> rowid       #} p
     rowidLength <- {#get SubscrMessageRow -> rowidLength #} p
-    rowid       <- ts rowid' rowidLength
+    let rowid   = (rowid', fromIntegral rowidLength)
     return Data_SubscrMessageRow {..}
 
 data Data_SubscrMessageTable = Data_SubscrMessageTable
   { operation  :: !OpCode
-  , name       :: !Text
+  , name       :: !CStringLen
   , rows       :: !PtrSubscrMessageRow
   , numRows    :: !CUInt
   } deriving Show
@@ -1009,7 +1007,7 @@ instance Storable Data_SubscrMessageTable where
     nameLength <- {#get SubscrMessageTable -> nameLength #} p
     rows       <- {#get SubscrMessageTable -> rows       #} p
     numRows    <- {#get SubscrMessageTable -> numRows    #} p
-    name       <- ts name' nameLength
+    let name    = (name', fromIntegral nameLength)
     return Data_SubscrMessageTable {..}
 
 data Data_VersionInfo = Data_VersionInfo

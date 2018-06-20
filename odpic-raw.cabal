@@ -25,6 +25,7 @@ library
   build-tools:         c2hs
   build-depends:       base >= 4.7 && < 5
                      , text
+                     , bytestring
                      , resourcet
                      , conduit
                      , time
@@ -43,7 +44,7 @@ test-suite odpic-raw-test
                      , odpic-raw
                      , resourcet
                      , conduit
-                     , text
+                     , bytestring
                      , monad-logger
                      , hspec
                      , QuickCheck

@@ -7,22 +7,26 @@ module Database.Dpi.Field(
   , FromDataField(..)
   , ToDataField(..)
   , isNullable
+  , fromByteString
+  , toByteString
   ) where
 
 import           Database.Dpi.Internal
 import           Database.Dpi.Util
 
 import           Control.Exception      (throw)
+import           Data.ByteString        (ByteString)
+import qualified Data.ByteString        as B
+import qualified Data.ByteString.Char8  as BC
+import qualified Data.ByteString.Unsafe as B
+import           Data.Char              (toLower)
 import           Data.Decimal
 import           Data.Int               (Int64)
 import           Data.Monoid            ((<>))
-import           Data.Text              (Text)
-import qualified Data.Text              as T
-import qualified Data.Text.Lazy         as L
-import qualified Data.Text.Lazy.Builder as B
 import           Data.Time
 import           Data.Time.Clock.POSIX
 import           Data.Word
+import           Foreign.C.String
 import           Foreign.C.Types
 
 -- | Database Raw Data with Type Info
@@ -40,21 +44,18 @@ class FromDataField a where
 isNullable    :: DataField -> Bool
 isNullable DataField{..} = let Data_QueryInfo{..} = info in nullOk
 
-instance FromDataField Text where
-  fromDataField = fmap (fmap L.toStrict) . fromDataField
-
-instance FromDataField L.Text where
+instance FromDataField ByteString where
   fromDataField DataField{..} = let Data_QueryInfo{..} = info in go name typeInfo value
     where
       go _ _ (DataNull          _) = return Nothing
-      go _ _ (DataChar          v) = return . Just $ toLazyText v
-      go _ _ (DataLongRaw       v) = return . Just $ toLazyText v
-      go _ _ (DataLongVarchar   v) = return . Just $ toLazyText v
-      go _ _ (DataNVarchar      v) = return . Just $ toLazyText v
-      go _ _ (DataRaw           v) = return . Just $ toLazyText v
-      go _ _ (DataVarchar       v) = return . Just $ toLazyText v
-      go _ _ (DataNChar         v) = return . Just $ toLazyText v
-      go n _ _                     = singleError n
+      go _ _ (DataChar          v) = Just <$> toByteString v
+      go _ _ (DataLongRaw       v) = Just <$> toByteString v
+      go _ _ (DataLongVarchar   v) = Just <$> toByteString v
+      go _ _ (DataNVarchar      v) = Just <$> toByteString v
+      go _ _ (DataRaw           v) = Just <$> toByteString v
+      go _ _ (DataVarchar       v) = Just <$> toByteString v
+      go _ _ (DataNChar         v) = Just <$> toByteString v
+      go n _ _                     = singleError' n
 
 instance FromDataField Integer where
   fromDataField DataField{..} = let Data_QueryInfo{..} = info in go name typeInfo value
@@ -68,7 +69,7 @@ instance FromDataField Integer where
       go _ _ (DataNumDouble     v) = return . Just $ round     v
       go _ _ (DataDouble        v) = return . Just $ round     v
       -- go _ _ (DataNumBytes      v) = !Data_Bytes
-      go n _ _                     = singleError n
+      go n _ _                     = singleError' n
 
 instance FromDataField Int where
   fromDataField = fmap (fmap fromInteger) . fromDataField
@@ -94,7 +95,7 @@ instance FromDataField Double where
       go _ _ (DataNumDouble     v) = return . Just $ realToFrac v
       go _ _ (DataDouble        v) = return . Just $ realToFrac v
       -- go _ _ (DataNumBytes      v) = !Data_Bytes
-      go n _ _                     = singleError n
+      go n _ _                     = singleError' n
 
 instance FromDataField Float where
   fromDataField = fmap (fmap (realToFrac :: Double -> Float)) . fromDataField
@@ -111,14 +112,14 @@ instance FromDataField Decimal where
       go _ _ (DataNumDouble     v) = return . Just $ realToFrac v
       go _ _ (DataDouble        v) = return . Just $ realToFrac v
       -- go _ _ (DataNumBytes      v) = !Data_Bytes
-      go n _ _                     = singleError n
+      go n _ _                     = singleError' n
 
 instance FromDataField Bool where
   fromDataField DataField{..} = let Data_QueryInfo{..} = info in go name typeInfo value
     where
       go _ _ (DataNull          _) = return Nothing
       go _ _ (DataBoolean       v) = return $ Just v
-      go n _ _                     = singleError n
+      go n _ _                     = singleError' n
 
 instance FromDataField UTCTime where
   fromDataField DataField{..} = let Data_QueryInfo{..} = info in go name typeInfo value
@@ -131,7 +132,7 @@ instance FromDataField UTCTime where
       go _ _ (DataTimestampD    v) = return . Just $ toUTCTimeD v
       go _ _ (DataTimestampLtzD v) = return . Just $ toUTCTimeD v
       go _ _ (DataTimestampTzD  v) = return . Just $ toUTCTimeD v
-      go n _ _                     = singleError n
+      go n _ _                     = singleError' n
       -- go _ _ (DataIntervalDs    v) = !Data_IntervalDS
       -- go _ _ (DataIntervalYm    v) = !Data_IntervalYM
 
@@ -146,7 +147,7 @@ instance FromDataField ZonedTime where
       go _ _ (DataTimestampD    v) = return . Just $ utcToZonedTime utc $ toUTCTimeD v
       go _ _ (DataTimestampLtzD v) = return . Just $ utcToZonedTime utc $ toUTCTimeD v
       go _ _ (DataTimestampTzD  v) = return . Just $ utcToZonedTime utc $ toUTCTimeD v
-      go n _ _                     = singleError n
+      go n _ _                     = singleError' n
       -- go _ _ (DataIntervalDs    v) = !Data_IntervalDS
       -- go _ _ (DataIntervalYm    v) = !Data_IntervalYM
 
@@ -161,24 +162,21 @@ instance FromDataField DiffTime where
       go _ _ (DataNull          _) = return Nothing
       go _ _ (DataIntervalDs    v) = return . Just $ toDiffTime  v
       go _ _ (DataIntervalYm    v) = return . Just $ toDiffTime' v
-      go n _ _                     = singleError n
+      go n _ _                     = singleError' n
 
 -- | Some type can convert to 'DataValue'
 class ToDataField a where
   toDataField :: a -> NativeTypeNum -> OracleTypeNum -> IO DataValue
 
-instance ToDataField Text where
-  toDataField v = toDataField (B.toLazyText $ B.fromText v)
-
-instance ToDataField L.Text where
-  toDataField v NativeTypeBytes OracleTypeChar        = return $ DataChar        $ fromLazyText v
-  toDataField v NativeTypeBytes OracleTypeLongRaw     = return $ DataLongRaw     $ fromLazyText v
-  toDataField v NativeTypeBytes OracleTypeLongVarchar = return $ DataLongVarchar $ fromLazyText v
-  toDataField v NativeTypeBytes OracleTypeNchar       = return $ DataNChar       $ fromLazyText v
-  toDataField v NativeTypeBytes OracleTypeNumber      = return $ DataNumBytes    $ fromLazyText v
-  toDataField v NativeTypeBytes OracleTypeNvarchar    = return $ DataNVarchar    $ fromLazyText v
-  toDataField v NativeTypeBytes OracleTypeRaw         = return $ DataRaw         $ fromLazyText v
-  toDataField v NativeTypeBytes OracleTypeVarchar     = return $ DataVarchar     $ fromLazyText v
+instance ToDataField ByteString where
+  toDataField v NativeTypeBytes OracleTypeChar        = DataChar        <$> fromByteString v
+  toDataField v NativeTypeBytes OracleTypeLongRaw     = DataLongRaw     <$> fromByteString v
+  toDataField v NativeTypeBytes OracleTypeLongVarchar = DataLongVarchar <$> fromByteString v
+  toDataField v NativeTypeBytes OracleTypeNchar       = DataNChar       <$> fromByteString v
+  toDataField v NativeTypeBytes OracleTypeNumber      = DataNumBytes    <$> fromByteString v
+  toDataField v NativeTypeBytes OracleTypeNvarchar    = DataNVarchar    <$> fromByteString v
+  toDataField v NativeTypeBytes OracleTypeRaw         = DataRaw         <$> fromByteString v
+  toDataField v NativeTypeBytes OracleTypeVarchar     = DataVarchar     <$> fromByteString v
   toDataField _ _               _                     = singleError     "Text"
 
 instance ToDataField Bool where
@@ -256,13 +254,20 @@ instance ToDataField DiffTime where
   toDataField _ _                 _                 = singleError "DiffTime"
 
 
-{-# INLINE fromLazyText #-}
-fromLazyText :: L.Text -> Data_Bytes
-fromLazyText bytes = let encoding = "utf-8" in Data_Bytes{..}
+-- {-# INLINE fromLazyText #-}
+-- fromLazyText :: L.Text -> Data_Bytes
+-- fromLazyText bytes = let encoding = "utf-8" in Data_Bytes{..}
 
-{-# INLINE toLazyText #-}
-toLazyText :: Data_Bytes -> L.Text
-toLazyText Data_Bytes{..} = bytes
+-- {-# INLINE toLazyText #-}
+-- toLazyText :: Data_Bytes -> L.Text
+-- toLazyText Data_Bytes{..} = bytes
+
+fromByteString :: ByteString -> IO Data_Bytes
+fromByteString bs = B.unsafeUseAsCStringLen bs $ \bytes -> B.unsafeUseAsCString "utf-8" $ \encoding -> return Data_Bytes{..}
+
+-- | Convert from CStringLen to ByteString
+toByteString :: Data_Bytes -> IO ByteString
+toByteString Data_Bytes{..} = B.packCStringLen bytes
 
 {-# INLINE fromDiffTime #-}
 fromDiffTime :: DiffTime -> Data_IntervalDS
@@ -357,6 +362,10 @@ toFloat :: CFloat -> Float
 toFloat (CFloat c) = c
 
 {-# INLINE singleError #-}
-singleError :: Text -> IO a
+singleError :: String -> IO a
 singleError name = throw $ DpiException $ "type mismatch " <> name
+
+{-# INLINE singleError' #-}
+singleError' :: CStringLen -> IO a
+singleError' name = B.packCStringLen name >>= singleError . BC.unpack
 

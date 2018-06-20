@@ -1,13 +1,13 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RecordWildCards #-}
 
 import           Test.Hspec
 import           Test.QuickCheck
 
+import qualified Data.ByteString       as B
+import qualified Data.ByteString.Char8 as BC
 import           System.Environment
-import Data.Text(Text)
-import qualified Data.Text.IO as TI
 
 import           Database.Dpi
 import           Database.Dpi.Field
@@ -73,9 +73,9 @@ test = hspec $ do
         mayC `shouldBe` Just 0
 
         value <- getQueryValue st 1
-        Just k :: Maybe Text <- fromDataField DataField{..}
+        Just k :: Maybe B.ByteString <- fromDataField DataField{..}
         print info
-        TI.putStrLn k
+        BC.putStrLn k
 
         ok <- releaseStatement st
         ok `shouldBe` True
