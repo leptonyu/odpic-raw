@@ -1,0 +1,46 @@
+name: odpic-raw
+version: 0.3.0
+synopsis: Oracle Database Bindings
+description: A low-level client library for the Oracle database, implemented as bindings to the C ODPI API.
+maintainer: Daniel YU <leptonyu@gmail.com>
+license: MIT
+github: leptonyu/odpic-raw
+category: Database, Oracle, ODPI-C, FFI, Raw
+extra-source-files: README.md
+
+dependencies:
+  - base >= 4.7 && < 5
+  - bytestring
+  - resourcet
+  - conduit
+  - time
+  - Decimal
+
+defaults:
+  local: defaults.yaml
+
+library:
+  exposed-modules:
+    - Database.Dpi
+    - Database.Dpi.Field
+    - Database.Dpi.Sql
+  other-modules:
+    - Database.Dpi.Internal
+    - Database.Dpi.Prelude
+    - Database.Dpi.Util
+  extra-libraries: odpic
+  build-tools: c2hs
+
+tests:
+  odpic-raw-test:
+    source-dirs: 
+      - test
+    main: Spec.hs
+    extra-libraries: odpic
+    build-tools: c2hs
+    dependencies:
+      - base
+      - resourcet
+      - conduit
+      - bytestring
+      - hspec

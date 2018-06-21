@@ -1,12 +1,5 @@
-{-# LANGUAGE BangPatterns           #-}
-{-# LANGUAGE FlexibleContexts       #-}
-{-# LANGUAGE FlexibleInstances      #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE InstanceSigs           #-}
-{-# LANGUAGE MultiParamTypeClasses  #-}
-{-# LANGUAGE RankNTypes             #-}
-{-# LANGUAGE TupleSections          #-}
-{-# LANGUAGE UndecidableInstances   #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 module Database.Dpi.Util where
 
 import           Database.Dpi.Internal
@@ -14,7 +7,6 @@ import           Database.Dpi.Prelude
 
 import           Control.Exception
 import qualified Data.ByteString.Char8 as B
-import qualified Data.Text             as T
 
 {-# INLINE isOk #-}
 isOk :: CInt -> Bool
@@ -51,9 +43,6 @@ class ToString s where
 instance ToString String where
   toString = id
 
-instance ToString T.Text where
-   toString = T.unpack
-
 instance ToString ByteString where
    toString = B.unpack
 
@@ -63,7 +52,7 @@ inVar = (&)
 
 {-# INLINE inCxtPtr #-}
 inCxtPtr :: HasCxtPtr p -> (Ptr p -> r) -> r
-inCxtPtr (cxt,p) f = f p
+inCxtPtr (_,p) f = f p
 
 {-# INLINE inStr #-}
 inStr :: (Return IO r, ToString s) => s -> (CString -> r) -> r
@@ -87,7 +76,7 @@ inBool !b f = f $ fromBool b
 
 {-# INLINE inPtr #-}
 inPtr :: (Return IO r, Storable a) => (Ptr a -> IO b) -> (Ptr a -> r) -> r
-inPtr init f = re $ withPtrs $ \c -> init c >> return (f c)
+inPtr i f = re $ withPtrs $ \c -> i c >> return (f c)
 
 {-# INLINE outBool #-}
 outBool :: IO CInt -> IO Bool
@@ -95,7 +84,7 @@ outBool = (isOk <$>)
 
 {-# INLINE setString #-}
 setString :: ToString s => (Ptr a -> Ptr CChar -> CUInt -> IO CInt) -> HasCxtPtr a -> s -> IO Bool
-setString f (cxt,p) !s = f p & inStrLen s & outBool
+setString f (_,p) !s = f p & inStrLen s & outBool
 
 -- | Returns error information for the last error that was raised by the library.
 -- This function must be called with the same thread that generated the error.
@@ -107,7 +96,7 @@ getContextError :: PtrContext -> IO Data_ErrorInfo
 getContextError !p = alloca $ \pe -> libContextGetError p pe >> peek pe
 
 {-# INLINE throwContextError #-}
-throwContextError :: HasCallStack => PtrContext -> IO a
+throwContextError :: PtrContext -> IO a
 throwContextError !cxt = getContextError cxt >>= throw . ErrorInfoException
 
 {-# INLINE outValue #-}
@@ -115,9 +104,9 @@ outValue :: (WithPtrs a) => PtrContext -> (a -> IO b) -> (a -> IO CInt) -> IO b
 outValue cxt ab = outValue' cxt ab return
 
 {-# INLINE outValue' #-}
-outValue' :: (WithPtrs a, HasCallStack) => PtrContext -> (a -> IO b) -> (a -> IO c) -> (a -> IO CInt) -> IO b
+outValue' :: WithPtrs a => PtrContext -> (a -> IO b) -> (a -> IO c) -> (a -> IO CInt) -> IO b
 outValue' !cxt ab be lib = withPtrs $ \a -> do
-  be a
+  _ <- be a
   r <- lib a
   if isOk r then ab a else throwContextError cxt
 
@@ -140,7 +129,7 @@ out3Value
 out3Value !cxt f g = outValue cxt f (go g)
   where
     {-# INLINE go #-}
-    go f ((x,y),z) = f x y z
+    go h ((x,y),z) = h x y z
 
 {-# INLINE out4Value #-}
 out4Value
@@ -149,7 +138,7 @@ out4Value
 out4Value cxt f g = outValue cxt f (go g)
   where
     {-# INLINE go #-}
-    go f ((x,y),(z,w)) = f x y z w
+    go h ((x,y),(z,w)) = h x y z w
 
 {-# INLINE outCxtPtr #-}
 outCxtPtr :: HasCxtPtr b -> (Ptr (Ptr a) -> IO CInt) -> IO (HasCxtPtr a)
