@@ -1,8 +1,3 @@
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE PartialTypeSignatures #-}
-{-# LANGUAGE RecordWildCards       #-}
-{-# LANGUAGE TupleSections         #-}
 {-|
 
 Module:      Database.Dpi
@@ -17,15 +12,14 @@ FFI raw bindings to <https://oracle.github.io/odpi/doc ODPI-C>
 @
 import Database.Dpi
 
-username = "username"
-password = "password"
-connstr  = "localhost:1521/dbname"
+conf :: OracleConfig
+conf = defaultOracle "username" "password" "localhost:1521/dbname"
 
 {-# INLINE main #-}
 main :: IO ()
 main = do
   withContext $ \\cxt ->
-    withPool cxt username password connstr "utf-8" "utf-8" 2 $ \\pool ->
+    withPool cxt conf return $ \\pool ->
       withPoolConnection pool $ \\conn ->
         withStatement conn False "SELECT SYSDATE FROM DUAL" $ \\st -> do
           r <- executeStatement st ModeExecDefault
@@ -130,8 +124,6 @@ import           Database.Dpi.Util
 import           Control.Exception
 import qualified Data.ByteString       as B
 import qualified Data.ByteString.Char8 as BC
-import           Data.Maybe            (fromMaybe)
-import qualified Data.Text             as T
 
 -- * Context Interface
 
@@ -183,29 +175,40 @@ getClientVersion p = libContextGetClientVersion p & outValue p peek
 
 -- | Oracle Configuration
 data OracleConfig = OracleConfig
-  { username :: ByteString -- ^ the name of the user used for authenticating the user
-  , password :: ByteString -- ^ the password to use for authenticating the user
-  , connstr  :: ByteString -- ^ the connect string identifying the database to which a connection is to be established
+  { username             :: ByteString -- ^ the name of the user used for authenticating the user
+  , password             :: ByteString -- ^ the password to use for authenticating the user
+  , connstr              :: ByteString -- ^ the connect string identifying the database to which a connection is to be established
+  , connectionCreateMode :: CreateMode
   } deriving Show
 
-type SQL = T.Text
+-- | Default Configuration
+defaultOracle
+  :: ByteString
+  -> ByteString
+  -> ByteString
+  -> OracleConfig
+defaultOracle u p c = OracleConfig u p c ModeCreateDefault
+
+-- | SQL String
+type SQL = String
 
 -- | Creates a standalone connection to a database or acquires a connection from a session pool and returns a reference to the connection.
 {-# INLINE createConnection #-}
-createConnection :: PtrContext -- ^ Context
-                 -> OracleConfig
-                 -> (Data_CommonCreateParams -> Data_CommonCreateParams) -- ^ custom 'Data_CommonCreateParams'
-                 -> (Data_ConnCreateParams   -> Data_ConnCreateParams) -- ^ custom 'Data_ConnCreateParams'
-                 -> IO PtrConn -- ^ a reference to the connection that is created.
-                 -- If a value is returned, a call to 'releaseConnection' must be made in order to release the reference.
-                 -- This should be done after the error information has been retrieved.
-createConnection cxt OracleConfig{..} hcmp hccp
-  = libConnCreate cxt
+createConnection
+  :: PtrContext -- ^ Context
+  -> OracleConfig
+  -> (Data_ConnCreateParams -> IO Data_ConnCreateParams) -- ^ custom 'Data_ConnCreateParams'
+  -> IO PtrConn -- ^ a reference to the connection that is created.
+  -- If a value is returned, a call to 'releaseConnection' must be made in order to release the reference.
+  -- This should be done after the error information has been retrieved.
+createConnection cxt OracleConfig{..} hccp =
+  let hcmp ccp = return ccp { createMode = connectionCreateMode}
+  in libConnCreate cxt
     & inStrLen username
     & inStrLen password
     & inStrLen connstr
-    & inPtr (\c -> libContextInitCommonCreateParams cxt c >> peek c >>= poke c . hcmp)
-    & inPtr (\c -> libContextInitConnCreateParams   cxt c >> peek c >>= poke c . hccp)
+    & inPtr (\c -> libContextInitCommonCreateParams cxt c >> peek c >>= hcmp >>= poke c)
+    & inPtr (\c -> libContextInitConnCreateParams   cxt c >> peek c >>= hccp >>= poke c)
     & outCxtPtr (cxt,cxt)
 
 -- | Closes the connection and makes it unusable for further activity. close connection, but not release resource, plese use 'releaseConnection' to release and close connection
@@ -240,13 +243,12 @@ pingConnection = runBool libConnPing
 withConnection
   :: PtrContext -- ^ Context
   -> OracleConfig
-  -> (Data_CommonCreateParams -> Data_CommonCreateParams) -- ^ custom 'Data_CommonCreateParams'
-  -> (Data_ConnCreateParams   -> Data_ConnCreateParams) -- ^ custom 'Data_ConnCreateParams'
+  -> (Data_ConnCreateParams   -> IO Data_ConnCreateParams) -- ^ custom 'Data_ConnCreateParams'
   -> (PtrConn -> IO a) -- ^ action use connection
   -> IO a
-withConnection p conf hccp hccp2
+withConnection p conf hccp2
   = bracket
-      (createConnection p conf hccp hccp2)
+      (createConnection p conf hccp2)
       (\c -> closeConnection ModeConnCloseDefault c `finally` releaseConnection c)
 
 -- ** Transaction Interface
@@ -352,7 +354,7 @@ getStmtCacheSize = runInt libConnGetStmtCacheSize
 -- | Sets the size of the statement cache.
 {-# INLINE setStmtCacheSize #-}
 setStmtCacheSize :: PtrConn -> Int -> IO Bool
-setStmtCacheSize (cxt,p) size = libConnSetStmtCacheSize p & inInt size & outBool
+setStmtCacheSize (_,p) size = libConnSetStmtCacheSize p & inInt size & outBool
 
 -- | Sets the client info attribute on the connection.
 -- This is one of the end-to-end tracing attributes that can be tracked in database views,
@@ -415,7 +417,7 @@ changePassword
   -> ByteString    -- ^ the old password of the user whose password is to be changed
   -> ByteString    -- ^ the new password of the user whose password is to be changed
   -> IO Bool
-changePassword (cxt,p) username oldPassword newPassword
+changePassword (_,p) username oldPassword newPassword
   = libConnChangePassword p
     & inStrLen username
     & inStrLen oldPassword
@@ -434,7 +436,7 @@ shutdownDatabase
   -- to 'ModeAuthSysdba' or 'ModeAuthSysoper'.
   -> ShutdownMode
   -> IO Bool
-shutdownDatabase (cxt,p) sm = libConnShutdownDatabase p & inEnum sm & outBool
+shutdownDatabase (_,p) sm = libConnShutdownDatabase p & inEnum sm & outBool
 
 -- | Starts up a database.
 {-# INLINE startupDatabase #-}
@@ -444,7 +446,7 @@ startupDatabase
   -- one of 'ModeAuthSysdba' or 'ModeAuthSysoper'.
   -> StartupMode -- ^ one of the values from the enumeration 'StartupMode'
   -> IO Bool
-startupDatabase (cxt,p) sm = libConnStartupDatabase p & inEnum sm & outBool
+startupDatabase (_,p) sm = libConnStartupDatabase p & inEnum sm & outBool
 
 -- * ConnectionPool Interace
 -- $pool
@@ -470,25 +472,23 @@ poolAddRef = runBool libPoolAddRef
 {-# INLINE createPool #-}
 createPool
   :: PtrContext -- ^ Context
-  -> ByteString -- ^ the name of the user used for authenticating the user
-  -> ByteString -- ^ the password to use for authenticating the user
-  -> ByteString -- ^ the connect string identifying the database to which a connection is to be established
-  -> (Data_CommonCreateParams -> Data_CommonCreateParams) -- ^ custom 'Data_CommonCreateParams'
-  -> (Data_PoolCreateParams -> Data_PoolCreateParams)
+  -> OracleConfig
+  -> (Data_PoolCreateParams -> IO Data_PoolCreateParams)
   -> IO PtrPool
-createPool cxt username password connstr hcmp hpcp
-  = libPoolCreate cxt
+createPool cxt OracleConfig{..} hpcp =
+  let hcmp ccp = return ccp { createMode = connectionCreateMode}
+  in libPoolCreate cxt
     & inStrLen username
     & inStrLen password
     & inStrLen connstr
-    & inPtr (\c -> libContextInitCommonCreateParams cxt c >> peek c >>= poke c . hcmp)
-    & inPtr (\c -> libContextInitPoolCreateParams   cxt c >> peek c >>= poke c . hpcp)
+    & inPtr (\c -> libContextInitCommonCreateParams cxt c >> peek c >>= hcmp >>= poke c)
+    & inPtr (\c -> libContextInitPoolCreateParams   cxt c >> peek c >>= hpcp >>= poke c)
     & outCxtPtr (cxt,cxt)
 
 -- | Closes the pool and makes it unusable for further activity.
 {-# INLINE closePool #-}
 closePool :: PtrPool -> PoolCloseMode -> IO Bool
-closePool (cxt,p) mode = libPoolClose p & inEnum mode & outBool
+closePool (_,p) mode = libPoolClose p & inEnum mode & outBool
 
 -- | Releases a reference to the pool. A count of the references to the pool is maintained
 -- and when this count reaches zero, the memory associated with the pool is freed
@@ -500,18 +500,14 @@ releasePool = runBool libPoolRelease
 -- | with pool
 withPool
   :: PtrContext -- ^ Context
-  -> ByteString -- ^ the name of the user used for authenticating the user
-  -> ByteString -- ^ the password to use for authenticating the user
-  -> ByteString -- ^ the connect string identifying the database to which a connection is to be established
-  -> Int
+  -> OracleConfig
+  -> (Data_PoolCreateParams -> IO Data_PoolCreateParams)
   -> (PtrPool -> IO a) -- ^ action use connection
   -> IO a
-withPool p username password connstr thread
+withPool p conf hpcp
   = bracket
-      (createPool p username password connstr id (setP thread))
+      (createPool p conf hpcp)
       (\c -> closePool c ModePoolCloseDefault `finally` releasePool c)
-  where
-    setP t  v = v { maxSessions = fromIntegral t, sessionIncrement = 1 } :: Data_PoolCreateParams
 
 -- | with pool provide a connection will released after action
 {-# INLINE withPoolConnection #-}
@@ -569,14 +565,14 @@ getPoolWaitTimeout = runInt libPoolGetWaitTimeout
 -- | Sets the mode used for acquiring or getting connections from the pool.
 {-# INLINE setPoolGetMode #-}
 setPoolGetMode :: PtrPool -> PoolGetMode -> IO Bool
-setPoolGetMode (cxt,p) mode = libPoolSetGetMode p & inEnum mode & outBool
+setPoolGetMode (_,p) mode = libPoolSetGetMode p & inEnum mode & outBool
 
 -- | Sets the maximum lifetime of all sessions in the pool, in seconds.
 -- Sessions in the pool are terminated when this value has been reached,
 -- but only when another session is released back to the pool.
 {-# INLINE setPoolMaxLifetimeSession #-}
 setPoolMaxLifetimeSession :: PtrPool -> Int -> IO Bool
-setPoolMaxLifetimeSession (cxt,p) maxLifetimeSession
+setPoolMaxLifetimeSession (_,p) maxLifetimeSession
   = libPoolSetMaxLifetimeSession p
     & inInt maxLifetimeSession
     & outBool
@@ -584,7 +580,7 @@ setPoolMaxLifetimeSession (cxt,p) maxLifetimeSession
 -- | Sets the default size of the statement cache for sessions in the pool.
 {-# INLINE setPoolStmtCacheSize #-}
 setPoolStmtCacheSize :: PtrPool -> Int -> IO Bool
-setPoolStmtCacheSize (cxt,p) stmtCacheSize
+setPoolStmtCacheSize (_,p) stmtCacheSize
   = libPoolSetStmtCacheSize p
     & inInt stmtCacheSize
     & outBool
@@ -593,7 +589,7 @@ setPoolStmtCacheSize (cxt,p) stmtCacheSize
 -- but only when another session is released back to the pool.
 {-# INLINE setPoolTimeout #-}
 setPoolTimeout :: PtrPool -> Int -> IO Bool
-setPoolTimeout (cxt,p) timeout
+setPoolTimeout (_,p) timeout
   = libPoolSetTimeout p
     & inInt timeout
     & outBool
@@ -604,7 +600,7 @@ setPoolTimeout (cxt,p) timeout
 -- @since <https://oracle.github.io/odpi/doc ODPI-C 2.4.0>
 {-# INLINE setPoolWaitTimeout #-}
 setPoolWaitTimeout :: PtrPool -> Int -> IO Bool
-setPoolWaitTimeout (cxt,p) timeout
+setPoolWaitTimeout (_,p) timeout
   = libPoolSetWaitTimeout p
     & inInt timeout
     & outBool
@@ -637,22 +633,22 @@ prepareStatement p scrollable sql
     & (\f -> f nullPtr 0)
     & outCxtPtr p
 
--- | Normalize SQL, replace newline characters with space characters. and remove semicolon in the end of sql
-{-# INLINE normalize #-}
-normalize :: SQL -> SQL
-normalize = T.dropWhileEnd (==';')
-          . T.strip
-          . T.map (\c -> if c == '\n' || c == '\r' then ' ' else c)
+-- -- | Normalize SQL, replace newline characters with space characters. and remove semicolon in the end of sql
+-- {-# INLINE normalize #-}
+-- normalize :: SQL -> SQL
+-- normalize = T.dropWhileEnd (==';')
+--           . T.strip
+--           . T.map (\c -> if c == '\n' || c == '\r' then ' ' else c)
 
-{-# INLINE escapeName #-}
-escapeName :: SQL -> SQL
-escapeName name = "\"" <> T.replace "\"" "\"\"" name <> "\""
+-- {-# INLINE escapeName #-}
+-- escapeName :: SQL -> SQL
+-- escapeName name = "\"" <> T.replace "\"" "\"\"" name <> "\""
 
 -- | Closes the statement and makes it unusable for further work immediately,
 -- rather than when the reference count reaches zero.
 {-# INLINE closeStatement #-}
 closeStatement :: PtrStmt -> IO Bool
-closeStatement (cxt, p) = isOk <$> libStmtClose p nullPtr 0
+closeStatement (_, p) = isOk <$> libStmtClose p nullPtr 0
 
 -- | Releases a reference to the statement. A count of the references to the statement is maintained
 -- and when this count reaches zero, the memory associated with the statement is freed
@@ -682,7 +678,7 @@ withStatement p scrollable sql f
 -- | Scrolls the statement to the position in the cursor specified by the mode and offset.
 {-# INLINE scrollStatement #-}
 scrollStatement :: PtrStmt -> FetchMode -> Int -> Int -> IO Bool
-scrollStatement (cxt,p) mode offset rowOffset = libStmtScroll p & inEnum mode & inInt offset & inInt rowOffset & outBool
+scrollStatement (_,p) mode offset rowOffset = libStmtScroll p & inEnum mode & inInt offset & inInt rowOffset & outBool
 
 -- | Adds a reference to the statement.
 -- This is intended for situations where a reference to the statement needs to be maintained independently of
@@ -701,7 +697,7 @@ bindByName
   -> ByteString    -- ^ a byte string in the encoding used for CHAR data giving the name of the placeholder which is to be bound.
   -> PtrVar  -- ^ a reference to the variable which is to be bound.
   -> IO Bool
-bindByName (cxt,p) name (_,var)
+bindByName (_,p) name (_,var)
   = libStmtBindByName p
     & inStrLen name
     & inVar var
@@ -717,7 +713,7 @@ bindByPosition
              -- Placeholders are numbered from left to right, starting from 1, and duplicate names do not count as additional placeholders.
   -> PtrVar  -- ^ a reference to the variable which is to be bound.
   -> IO Bool
-bindByPosition (cxt,p) pos (_,var)
+bindByPosition (_,p) pos (_,var)
   = libStmtBindByPos p
     & inInt pos
     & inVar var
@@ -728,12 +724,12 @@ bindByPosition (cxt,p) pos (_,var)
 {-# INLINE bindValueByName #-}
 bindValueByName
   :: PtrStmt       -- ^ Statement
-  -> ByteString          -- ^ a byte string in the encoding used for CHAR data giving the name of the placeholder which is to be bound.
+  -> ByteString    -- ^ a byte string in the encoding used for CHAR data giving the name of the placeholder which is to be bound.
   -> DataValue     -- ^ Value
                    -- Once the statement has been executed, this new variable will be released.
   -> IO Bool
-bindValueByName (cxt,p) name dv = do
-  (ntn, ot, dt) <- newData dv
+bindValueByName (_,p) name dv = do
+  (ntn, _, dt) <- newData dv
   libStmtBindValueByName p
     & inStrLen name
     & inEnum ntn
@@ -752,7 +748,7 @@ bindValueByPosition
   -> DataValue     -- ^ Value
                    -- Once the statement has been executed, this new variable will be released.
   -> IO Bool
-bindValueByPosition (cxt,p) pos dv = do
+bindValueByPosition (_,p) pos dv = do
   (ntn, _, dt) <- newData dv
   libStmtBindValueByPos p
     & inInt pos
@@ -769,7 +765,7 @@ define
   -> Int     -- ^ the position which is to be defined. The first position is 1.
   -> PtrVar  -- ^ a reference to the variable which is to be used for fetching rows from the statement at the given position.
   -> IO Bool
-define (cxt,p) pos (_,var)
+define (_,p) pos (_,var)
   = libStmtDefine p
     & inInt pos
     & inVar var
@@ -795,7 +791,7 @@ defineValue
   -> PtrObjectType -- ^ a reference to the object type of the object that is being bound or fetched.
                    -- This value is only used if the Oracle type is 'OracleTypeObject'.
   -> IO Bool
-defineValue (cxt,p) pos otn ntn size isSizeInByte (_,ot)
+defineValue (_,p) pos otn ntn size isSizeInByte (_,ot)
   = libStmtDefineValue p
     & inInt pos
     & inEnum otn
@@ -826,7 +822,7 @@ getBindNames ps@(cxt,p) = do
           n  <- peek pn
           ac <- peekArray (fromIntegral n) pan
           al <- peek panl
-          mapM (\c -> B.packCStringLen (c, fromIntegral al)) ac
+          mapM (\cc -> B.packCStringLen (cc, fromIntegral al)) ac
         else throwContextError cxt
 
 -- | Returns information about the statement.
@@ -846,7 +842,7 @@ getFetchArraySize = runInt libStmtGetFetchArraySize
 -- the default value of DPI_DEFAULT_FETCH_ARRAY_SIZE.
 {-# INLINE setFetchArraySize #-}
 setFetchArraySize :: PtrStmt -> Int -> IO Bool
-setFetchArraySize (cxt,p) pos
+setFetchArraySize (_,p) pos
   = libStmtSetFetchArraySize p
     & inInt pos
     & outBool
@@ -855,9 +851,7 @@ setFetchArraySize (cxt,p) pos
 -- Implicit results are only available when both the client and server are 12.1 or higher.
 {-# INLINE getImplicitResult #-}
 getImplicitResult :: PtrStmt -> IO (Maybe PtrStmt)
-getImplicitResult p@(cxt,_) = do
-  ps <- runMaybeVar libStmtGetImplicitResult p
-  return $ fmap (cxt,) ps
+getImplicitResult p@(cxt,_) = fmap (cxt,) <$> runMaybeVar libStmtGetImplicitResult p
 
 -- | Returns the number of columns that are being queried.
 {-# INLINE getNumberQueryColumns #-}
@@ -890,8 +884,8 @@ getQueryValue ps@(cxt,p) pos
     & out2Value cxt (go ps pos)
     where
       {-# INLINE go #-}
-      go p pos (pt,pd) = do
-        Data_QueryInfo{..} <- getQueryInfo p pos
+      go p' pos' (pt,pd) = do
+        Data_QueryInfo{..} <- getQueryInfo p' pos'
         let Data_DataTypeInfo{..} = typeInfo
         t <- te <$> peek pt
         peek pd >>= _get oracleTypeNum t
@@ -903,7 +897,7 @@ getQueryValue ps@(cxt,p) pos
 -- For non-queries, out and in-out variables are populated with their values.
 {-# INLINE executeStatement #-}
 executeStatement :: PtrStmt -> ExecMode -> IO Int
-executeStatement ps@(cxt,p) mode = libStmtExecute p & inEnum mode & outValue cxt peekInt
+executeStatement (cxt,p) mode = libStmtExecute p & inEnum mode & outValue cxt peekInt
 
 {-# INLINE executeMany #-}
 executeMany :: PtrStmt -> ExecMode -> Int -> IO Bool
@@ -948,16 +942,17 @@ fetchRows ps@(cxt,p) maxRow
     & out3Value cxt (go ps)
     where
       {-# INLINE go #-}
-      go ps ((pri,prf), pmr) = do
+      go ps' ((pri,prf), pmr) = do
         index <- peekInt pri
         num   <- peekInt prf
-        vs    <- fetch ps index num
+        vs    <- fetch' ps' index num
         more  <- toBool <$> peek pmr
         return (more, vs)
-      {-# INLINE fetch #-}
-      fetch p offset limit = do
-        count <- getRowCount p
-        mapM (getQueryValue p) [1..count]
+      {-# INLINE fetch' #-}
+      fetch' :: PtrStmt -> PageOffset -> PageLimit -> IO [DataValue]
+      fetch' p' _ _ = do
+        count <- getRowCount p'
+        mapM (getQueryValue p') [1..count]
 
 -- | Returns the number of rows affected by the last DML statement that was executed
 -- or the number of rows currently fetched from a query. In all other cases 0 is returned.
@@ -1043,7 +1038,7 @@ releaseLob = runBool libLobRelease
 -- | Trims the data in the LOB so that it only contains the specified amount of data.
 {-# INLINE trimLob #-}
 trimLob :: PtrLob -> Int64 -> IO Bool
-trimLob (cxt,p) size = libLobTrim p & inInt size & outBool
+trimLob (_,p) size = libLobTrim p & inInt size & outBool
 
 -- | Closes the LOB resource.
 -- This should be done when a batch of writes has been completed so that the indexes associated with the LOB can be updated.
@@ -1110,7 +1105,7 @@ getLobDirectoryAndFileName (cxt,p) = libLobGetDirectoryAndFileName p & out4Value
 -- | Sets the directory alias name and file name for a BFILE type LOB.
 {-# INLINE setLobDirectoryAndFileName #-}
 setLobDirectoryAndFileName :: PtrLob -> (FilePath, String) -> IO Bool
-setLobDirectoryAndFileName (cxt,p) (fp, name)
+setLobDirectoryAndFileName (_,p) (fp, name)
   = libLobSetDirectoryAndFileName p
     & inStrLen fp
     & inStrLen name
@@ -1131,7 +1126,7 @@ getLobSize = runInt libLobGetSize
 -- The LOB will first be cleared and then the provided data will be written.
 {-# INLINE setLobFromBytes #-}
 setLobFromBytes :: PtrLob -> ByteString -> IO Bool
-setLobFromBytes (cxt,p) buff
+setLobFromBytes (_,p) buff
   = libLobSetFromBytes p
     & inStrLen buff
     & outBool
@@ -1148,7 +1143,7 @@ readLobBytes (cxt,p) (offset, num) bufferSize
     & uncurry
     & outValue' cxt get (set bufferSize)
     where
-      set bs (pb,pblen) = poke pblen (fromIntegral bs)
+      set bs (_,pblen) = poke pblen (fromIntegral bs)
       get    (pb,pblen) = do
         pl <- peek pblen
         B.packCStringLen (pb,fromIntegral pl)
@@ -1157,7 +1152,7 @@ readLobBytes (cxt,p) (offset, num) bufferSize
 -- If multiple calls to this function are planned, the LOB should first be opened using the function 'openLob'.
 {-# INLINE writeLobBytes #-}
 writeLobBytes :: PtrLob -> PageOffset -> ByteString -> IO Bool
-writeLobBytes (cxt,p) size buff
+writeLobBytes (_,p) size buff
   = libLobWriteBytes p
     & inInt size
     & inStrLen buff
@@ -1193,7 +1188,7 @@ objectAddRef = runBool libObjectAddRef
 -- | Sets the value of the element found at the specified index.
 {-# INLINE objectAppendElement #-}
 objectAppendElement :: PtrObject -> NativeTypeNum -> PtrData -> IO Bool
-objectAppendElement (cxt,p) ntn pd
+objectAppendElement (_,p) ntn pd
   = libObjectAppendElement p
     & inEnum ntn
     & inVar pd
@@ -1208,7 +1203,7 @@ copyObject  p@(cxt,_)= (cxt,) <$> runVar libObjectCopy p
 -- | Trims a number of elements from the end of a collection.
 {-# INLINE trimObject #-}
 trimObject :: PtrObject -> Int -> IO Bool
-trimObject (cxt,p) size
+trimObject (_,p) size
   = libObjectTrim p
     & inInt size
     & outBool
@@ -1218,7 +1213,7 @@ trimObject (cxt,p) size
 -- The delete operation creates holes in the collection.
 {-# INLINE objectDeleteElementByIndex #-}
 objectDeleteElementByIndex :: PtrObject -> Int -> IO Bool
-objectDeleteElementByIndex (cxt,p) pos
+objectDeleteElementByIndex (_,p) pos
   = libObjectDeleteElementByIndex p
     & inInt pos
     & outBool
@@ -1226,7 +1221,7 @@ objectDeleteElementByIndex (cxt,p) pos
 -- | Sets the value of one of the object’s attributes.
 {-# INLINE setObjectAttributeValue #-}
 setObjectAttributeValue :: PtrObject -> PtrObjectAttr -> DataValue -> IO Bool
-setObjectAttributeValue (cxt,p) (_,poa) v = do
+setObjectAttributeValue (_,p) (_,poa) v = do
   (ntn, _, pd) <- newData v
   libObjectSetAttributeValue p poa & inEnum ntn & inVar pd & outBool
 
@@ -1250,8 +1245,8 @@ getObjectElementExistsByIndex (cxt,p) ind
 -- | Sets the value of the element found at the specified index.
 {-# INLINE setObjectElementValueByIndex #-}
 setObjectElementValueByIndex :: PtrObject -> Int -> DataValue -> IO Bool
-setObjectElementValueByIndex (cxt,p) ind v = do
-  (ntn, ot, pd) <- newData v
+setObjectElementValueByIndex (_,p) ind v = do
+  (ntn, _, pd) <- newData v
   libObjectSetElementValueByIndex p & inInt ind & inEnum ntn & inVar pd & outBool
 
 -- | Returns the value of the element found at the specified index.
@@ -1423,7 +1418,7 @@ setFloat p v = libDataSetFloat p (CFloat v)
 
 -- | Returns the value of the data when the native type is 'NativeTypeInt64'.
 getInt64 :: PtrData -> IO Int64
-getInt64 p = (fromInteger . toInteger) <$> libDataGetInt64 p
+getInt64 p = ft <$> libDataGetInt64 p
 
 -- | Sets the value of the data when the native type is 'NativeTypeInt64'.
 setInt64 :: PtrData -> Int64 -> IO ()
@@ -1431,7 +1426,7 @@ setInt64 p v = libDataSetInt64 p (fromInteger . toInteger $ v)
 
 -- | Returns the value of the data when the native type is 'NativeTypeUint64'.
 getUint64 :: PtrData -> IO Word64
-getUint64 p = (fromInteger . toInteger) <$> libDataGetUint64 p
+getUint64 p = ft <$> libDataGetUint64 p
 
 -- | Sets the value of the data when the native type is 'NativeTypeUint64'.
 setUint64 :: PtrData -> Word64 -> IO ()
@@ -1527,10 +1522,10 @@ newVar (cxt,p) otn ntn maxArraySize size sizeIsBytes isArray (_,oto)
     & out2Value cxt (go cxt)
     where
       {-# INLINE go #-}
-      go cxt (pv,pd) = do
+      go c (pv,pd) = do
         v <- peek pv
         d <- peekArray (fromIntegral maxArraySize) pd
-        return ((cxt,v), d)
+        return ((c,v), d)
 
 -- | Adds a reference to the variable.
 -- This is intended for situations where a reference to the variable needs to be maintained independently of
@@ -1602,7 +1597,7 @@ getVarSizeInBytes = runInt libVarGetSizeInBytes
 -- the byte string is converted to an Oracle number during the call to this function.
 {-# INLINE setVarFromBytes #-}
 setVarFromBytes :: PtrVar -> Int -> ByteString -> IO Bool
-setVarFromBytes (cxt,p) pos bytes
+setVarFromBytes (_,p) pos bytes
   = libVarSetFromBytes p
     & inInt pos
     & inStrLen bytes
@@ -1611,7 +1606,7 @@ setVarFromBytes (cxt,p) pos bytes
 -- | Sets the variable value to the specified LOB.
 {-# INLINE setVarFromLob #-}
 setVarFromLob :: PtrVar -> Int -> PtrLob -> IO Bool
-setVarFromLob (cxt,p) pos (_,lob) = libVarSetFromLob p & inInt pos & inVar lob & outBool
+setVarFromLob (_,p) pos (_,lob) = libVarSetFromLob p & inInt pos & inVar lob & outBool
 
 -- | Sets the variable value to the specified object.
 {-# INLINE setVarFromObject #-}
@@ -1725,7 +1720,7 @@ getDeqOptionsMode (cxt,p) = libDeqOptionsGetMode p & outValue cxt peekEnum
 -- | Sets the mode that is to be used when dequeuing messages.
 {-# INLINE setDeqOptionsMode #-}
 setDeqOptionsMode :: PtrDeqOptions -> DeqMode -> IO Bool
-setDeqOptionsMode (cxt,p) mdm = libDeqOptionsSetMode p & inEnum mdm & outBool
+setDeqOptionsMode (_,p) mdm = libDeqOptionsSetMode p & inEnum mdm & outBool
 
 -- | Returns the identifier of the specific message that is to be dequeued.
 {-# INLINE getDeqOptionsMsgId #-}
@@ -1745,7 +1740,7 @@ getDeqOptionsNavigation (cxt,p) = libDeqOptionsGetNavigation p & outValue cxt pe
 -- | Sets the position in the queue of the message that is to be dequeued.
 {-# INLINE setDeqOptionsNavigation #-}
 setDeqOptionsNavigation :: PtrDeqOptions -> DeqNavigation -> IO Bool
-setDeqOptionsNavigation (cxt,p) mdm = libDeqOptionsSetNavigation p & inEnum mdm & outBool
+setDeqOptionsNavigation (_,p) mdm = libDeqOptionsSetNavigation p & inEnum mdm & outBool
 
 -- | Returns the transformation of the message to be dequeued.
 -- See function 'setDeqOptionsTransformation' for more information.
@@ -1768,7 +1763,7 @@ getDeqOptionsVisibility (cxt,p) = libDeqOptionsGetVisibility p & outValue cxt pe
 -- | Sets whether the message being dequeued is part of the current transaction or constitutes a transaction on its own.
 {-# INLINE setDeqOptionsVisibility #-}
 setDeqOptionsVisibility :: PtrDeqOptions -> Visibility -> IO Bool
-setDeqOptionsVisibility (cxt,p) mdm = libDeqOptionsSetVisibility p & inEnum mdm & outBool
+setDeqOptionsVisibility (_,p) mdm = libDeqOptionsSetVisibility p & inEnum mdm & outBool
 
 -- | Returns the time to wait, in seconds, for a message matching the search criteria.
 -- See function 'setDeqOptionsWait' for more information.
@@ -1779,12 +1774,12 @@ getDeqOptionsWait = runInt libDeqOptionsGetWait
 -- | Set the time to wait, in seconds, for a message matching the search criteria.
 {-# INLINE setDeqOptionsWait #-}
 setDeqOptionsWait :: PtrDeqOptions -> Int -> IO Bool
-setDeqOptionsWait (cxt,p) wait = libDeqOptionsSetWait p & inInt wait & outBool
+setDeqOptionsWait (_,p) wait = libDeqOptionsSetWait p & inInt wait & outBool
 
 -- | Sets the message delivery mode that is to be used when dequeuing messages.
 {-# INLINE setDeqOptionsDeliveryMode #-}
 setDeqOptionsDeliveryMode :: PtrDeqOptions -> MessageDeliveryMode -> IO Bool
-setDeqOptionsDeliveryMode (cxt,p) mdm = libDeqOptionsSetDeliveryMode p & inEnum mdm & outBool
+setDeqOptionsDeliveryMode (_,p) mdm = libDeqOptionsSetDeliveryMode p & inEnum mdm & outBool
 
 -- * EnqOptions Interface
 -- $enq
@@ -1850,12 +1845,12 @@ getEnqOptionsVisibility (cxt,p) = libEnqOptionsGetVisibility p & outValue cxt pe
 -- | Sets whether the message being enqueued is part of the current transaction or constitutes a transaction on its own.
 {-# INLINE setEnqOptionsVisibility #-}
 setEnqOptionsVisibility :: PtrEnqOptions -> Visibility -> IO Bool
-setEnqOptionsVisibility (cxt,p) mdm = libEnqOptionsSetVisibility p & inEnum mdm & outBool
+setEnqOptionsVisibility (_,p) mdm = libEnqOptionsSetVisibility p & inEnum mdm & outBool
 
 -- | Sets the message delivery mode that is to be used when enqueuing messages.
 {-# INLINE setEnqOptionsDeliveryMode #-}
 setEnqOptionsDeliveryMode :: PtrEnqOptions -> MessageDeliveryMode -> IO Bool
-setEnqOptionsDeliveryMode (cxt,p) mdm = libEnqOptionsSetDeliveryMode p & inEnum mdm & outBool
+setEnqOptionsDeliveryMode (_,p) mdm = libEnqOptionsSetDeliveryMode p & inEnum mdm & outBool
 
 
 -- * MsgProps Interface
@@ -1914,7 +1909,7 @@ getMsgPropsDelay = runInt libMsgPropsGetDelay
 -- Note that delay processing requires the queue monitor to be started.
 {-# INLINE setMsgPropsDelay #-}
 setMsgPropsDelay :: PtrMsgProps -> Int -> IO Bool
-setMsgPropsDelay (cxt,p) delay = libMsgPropsSetDelay p & inInt delay & outBool
+setMsgPropsDelay (_,p) delay = libMsgPropsSetDelay p & inInt delay & outBool
 
 -- | Returns the mode that was used to deliver the message.
 {-# INLINE getMsgPropsDeliveryMode #-}
@@ -1952,7 +1947,7 @@ getMsgPropsExpiration = runInt libMsgPropsGetExpiration
 -- After this time elapses messages are moved to the exception queue in the 'MsgStateExpired' state.
 {-# INLINE setMsgPropsExpiration #-}
 setMsgPropsExpiration :: PtrMsgProps -> Int -> IO Bool
-setMsgPropsExpiration (cxt,p) delay = libMsgPropsSetExpiration p & inInt delay & outBool
+setMsgPropsExpiration (_,p) delay = libMsgPropsSetExpiration p & inInt delay & outBool
 
 -- | Returns the id of the message in the last queue that generated this message.
 -- See function 'setMsgPropsOriginalMsgId' for more information.
@@ -1975,7 +1970,7 @@ getMsgPropsPriority = runInt libMsgPropsGetPriority
 -- The priority can be any number, including negative numbers.
 {-# INLINE setMsgPropsPriority #-}
 setMsgPropsPriority :: PtrMsgProps -> Int -> IO Bool
-setMsgPropsPriority (cxt,p) delay = libMsgPropsSetPriority p & inInt delay & outBool
+setMsgPropsPriority (_,p) delay = libMsgPropsSetPriority p & inInt delay & outBool
 
 -- | Returns the state of the message at the time of dequeue.
 {-# INLINE getMsgPropsState #-}
@@ -2003,7 +1998,7 @@ newSubscr (cxt,p)  hcmp
     & out2Value cxt (go cxt)
     where
       {-# INLINE go #-}
-      go cxt (p,_) = (cxt,) <$> peek p
+      go c (p',_) = (c,) <$> peek p'
 
 -- | Returns a reference to a subscription which is used for requesting notifications of events that take place in the database.
 -- Events that are supported are changes on tables or queries (continuous query notification)
@@ -2026,7 +2021,7 @@ subscribe (cxt,p) hcmp
 --
 -- @since <https://oracle.github.io/odpi/doc ODPI-C 2.4.0>
 unsubscribe :: PtrConn -> PtrSubscr -> IO Bool
-unsubscribe (cxt,p) (_,ps) = isOk <$> (libConnUnsubscribe p ps)
+unsubscribe (_,p) (_,ps) = isOk <$> libConnUnsubscribe p ps
 
 -- | Adds a reference to the subscription.
 -- This is intended for situations where a reference to the subscription

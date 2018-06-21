@@ -3,28 +3,50 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 import           Test.Hspec
-import           Test.QuickCheck
 
 import qualified Data.ByteString       as B
 import qualified Data.ByteString.Char8 as BC
-import           System.Environment
+import           Data.Monoid           ((<>))
+import           Data.Time
 
 import           Database.Dpi
 import           Database.Dpi.Field
 import           Database.Dpi.Sql
 
 conf :: OracleConfig
-conf = OracleConfig "username" "password" "localhost:1521/dbname"
+conf = defaultOracle "username" "password" "localhost:1521/dbname"
 
 main :: IO ()
-main = setupLanguage conf >> test
+main = do
+  setupLanguage conf
+  test
+
+prepareTable :: PtrConn -> IO ()
+prepareTable conn = do
+  _ <- execute conn "DROP TABLE TEST_T_NAME" []
+  _ <- execute conn "CREATE TABLE TEST_T_NAME(ID INTEGER PRIMARY KEY, NAME VARCHAR2(64) NOT NULL, CREATE_TIME TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL)" []
+  _ <- execute conn "DROP SEQUENCE TEST_SEQ_NAME" []
+  _ <- execute conn "CREATE SEQUENCE TEST_SEQ_NAME" []
+  return ()
+
+data IdName = IdName
+  { key  :: Int
+  , name :: B.ByteString
+  , time :: ZonedTime
+  } deriving Show
+
+instance FromDataFields IdName where
+  fromDataFields dfm = do
+    Just key  <- readDataField dfm "ID"
+    Just name <- readDataField dfm "NAME"
+    Just time <- readDataField dfm "CREATE_TIME"
+    return IdName{..}
 
 test :: IO ()
 test = hspec $ do
   describe "Database.Dpi" $ do
 
     it "Context Test" $ do
-      getEnv "NLS_LANG" >>= print
       c       <- createContext
       version <- getClientVersion c
       ok      <- destroyContext   c
@@ -32,7 +54,7 @@ test = hspec $ do
       ok `shouldBe` True
 
     it "Connection Test" $ withContext $ \cxt -> do
-      conn  <- createConnection cxt conf id id
+      conn  <- createConnection cxt conf return
       pOk   <- pingConnection conn
       pOk `shouldBe` True
       getEncodingInfo  conn >>= print
@@ -51,7 +73,7 @@ test = hspec $ do
       pNOk `shouldBe` False
 
     it "Statement 1 Test" $ withContext $ \cxt -> do
-      withConnection cxt conf id id $ \conn -> do
+      withConnection cxt conf return $ \conn -> do
         st <- prepareStatement conn False "SELECT '中文' FROM DUAL"
         c  <- getBindCount st
         c  `shouldBe` 0
@@ -79,3 +101,47 @@ test = hspec $ do
 
         ok <- releaseStatement st
         ok `shouldBe` True
+
+    it "Statement 2 Test" $ withContext $ \cxt -> do
+      withConnection cxt conf return $ \conn -> do
+        withStatement conn False "SELECT 1,'中文' as 文字,SYSDATE FROM DUAL" $ \st -> do
+          r <- executeStatement st ModeExecDefault
+          r `shouldBe` 3
+          f <- fetch st
+          f `shouldBe` Just 0
+          v <- mapM (getQueryValue st) [1..r]
+          print v
+        withStatement conn False "SELECT 1,'hhh',SYSDATE FROM DUAL" $ \st -> do
+          r <- executeStatement st ModeExecDefault
+          r `shouldBe` 3
+          f <- fetch st
+          f `shouldBe` Just 0
+          mapM (getQueryValue st) [1..r] >>= print
+          f2 <- fetch st
+          f2 `shouldBe` Nothing
+
+    it "Statement 3 Failed Test" $ withContext $ \cxt -> do
+      withConnection cxt conf return $ \conn -> do
+        withStatement conn False "Wrong sql" $ \st -> do
+          executeStatement st ModeExecDefault `shouldThrow` anyException
+
+    it "Pool Test" $ withContext $ \cxt -> do
+      Database.Dpi.withPool cxt conf return $ \pool ->
+        withPoolConnection pool $ \conn -> do
+          let f = withStatement conn False "SELECT 1,'中文' as 文字,SYSTIMESTAMP FROM DUAL" $ \st -> do
+                      r <- executeStatement st ModeExecDefault
+                      _ <- fetch st
+                      mapM (getQueryValue st) [1..r] >>= print
+          _ <- sequence $ take 2 $ repeat f
+          (queryByPage conn "SELECT DBTIMEZONE,CURRENT_DATE,CURRENT_TIMESTAMP,SYSDATE,SYSTIMESTAMP FROM dual" [] (0,1) :: IO [String]) >>= print
+
+          prepareTable conn
+          let insert = "INSERT INTO TEST_T_NAME(ID,NAME) VALUES(:id,:name)"
+          _ <- execute conn insert [("id",return $ DataInt 0),("name",DataVarchar <$> fromByteString "test")]
+          (queryByPage conn "SELECT * FROM TEST_T_NAME" [] (0,1) :: IO [IdName]) >>= print
+          mapM_ (\i -> execute conn insert [("id",return $ DataInt i),("name",fmap DataVarchar . fromByteString . BC.pack $ "test-" <> show i)]) [1..100]
+
+          (queryByPage conn "SELECT * FROM TEST_T_NAME" [] (1,10) :: IO [IdName]) >>= print
+
+
+
