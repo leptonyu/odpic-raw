@@ -138,10 +138,11 @@ test = hspec $ do
           prepareTable conn
           let insert = "INSERT INTO TEST_T_NAME(ID,NAME) VALUES(:id,:name)"
           _ <- execute conn insert [("id",return $ DataInt 0),("name",DataVarchar <$> fromByteString "test")]
+          _ <- commitConnection conn
           (queryByPage conn "SELECT * FROM TEST_T_NAME" [] (0,1) :: IO [IdName]) >>= print
           mapM_ (\i -> execute conn insert [("id",return $ DataInt i),("name",fmap DataVarchar . fromByteString . BC.pack $ "test-" <> show i)]) [1..100]
-
-          (queryByPage conn "SELECT * FROM TEST_T_NAME" [] (1,10) :: IO [IdName]) >>= print
+          _ <- commitConnection conn
+          (queryByPage conn "SELECT * FROM TEST_T_NAME" [] (10,20) :: IO [IdName]) >>= print
 
 
 

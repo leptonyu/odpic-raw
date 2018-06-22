@@ -33,12 +33,10 @@ library:
 
 tests:
   odpic-raw-test:
-    source-dirs: 
-      - test
+    source-dirs: test
     main: Spec.hs
-    extra-libraries: odpic
-    build-tools: c2hs
     dependencies:
+      - odpic-raw
       - base
       - resourcet
       - conduit

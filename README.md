@@ -10,13 +10,15 @@ Requirements:
 
   * [libodpic 2.4.x](https://github.com/oracle/odpi/releases) (dpi.h should installed in /usr/local/include)
   * [Oracle Instant Client Basic or Basic Light package](http://www.oracle.com/technetwork/database/features/instant-client/index-097480.html)
-  * GHC 8.0.1 or greater
-  
-Install:
+  * GHC 8.2.2 or greater
+
+
+Installation:
 
 ```
-stack install odpic-raw
+stack build odpic-raw
 ```
+
 
 Use environment [`DPI_DEBUG_LEVEL`](https://oracle.github.io/odpi/doc/user_guide/debugging.html) to set DPI debug level.
 
@@ -33,7 +35,7 @@ edit [Spec.hs](https://github.com/leptonyu/odpic-raw/blob/master/test/Spec.hs), 
 stack test
 ```
 
-Stack dependent :
+Stack dependencies :
 
 this project is not in stackage yet, please add `extra-deps` in `stack.yaml` configuration.
 
