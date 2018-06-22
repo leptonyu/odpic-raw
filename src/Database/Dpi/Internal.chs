@@ -102,10 +102,10 @@ type PtrMsgProps   = HasCxtPtr DPI_MsgProps
 type PtrContext    = Ptr DPI_Context
 
 --        Inner               Data
-{#pointer *Bytes      as Ptr_Bytes      -> Data_Bytes      #}
-{#pointer *IntervalDS as Ptr_IntervalDS -> Data_IntervalDS #}
-{#pointer *IntervalYM as Ptr_IntervalYM -> Data_IntervalYM #}
-{#pointer *Timestamp  as Ptr_Timestamp  -> Data_Timestamp  #}
+{#pointer *Bytes      as PtrBytes      -> Data_Bytes      #}
+{#pointer *IntervalDS as PtrIntervalDS -> Data_IntervalDS #}
+{#pointer *IntervalYM as PtrIntervalYM -> Data_IntervalYM #}
+{#pointer *Timestamp  as PtrTimestamp  -> Data_Timestamp  #}
 
 data Data_Bytes = Data_Bytes
   { bytes    :: !CStringLen
@@ -215,7 +215,16 @@ data Data_AppContext  = Data_AppContext
 instance Storable Data_AppContext where
   sizeOf    _ = {#sizeof  AppContext #}
   alignment _ = {#alignof AppContext #}
-  poke      _ = noImplement
+  poke      p Data_AppContext{..} = do
+    let (n,nlen) = namespaceName
+        (m,mlen) = name
+        (v,vlen) = value
+    {#set AppContext -> namespaceName       #} p n
+    {#set AppContext -> namespaceNameLength #} p (fromIntegral nlen)
+    {#set AppContext -> name                #} p m
+    {#set AppContext -> nameLength          #} p (fromIntegral mlen)
+    {#set AppContext -> value               #} p v
+    {#set AppContext -> valueLength         #} p (fromIntegral vlen)
   peek      p = do
     namespaceName'      <- {#get AppContext -> namespaceName       #} p
     namespaceNameLength <- {#get AppContext -> namespaceNameLength #} p
