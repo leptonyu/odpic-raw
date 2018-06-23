@@ -190,7 +190,7 @@ defaultOracle
 defaultOracle u p c = OracleConfig u p c ModeCreateDefault
 
 -- | SQL String
-type SQL = String
+type SQL = ByteString
 
 -- | Creates a standalone connection to a database or acquires a connection from a session pool and returns a reference to the connection.
 {-# INLINE createConnection #-}

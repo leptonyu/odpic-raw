@@ -15,7 +15,7 @@ import           Control.Monad          (void, when)
 import           Control.Monad.IO.Class (MonadIO (..))
 import           Data.Acquire           (Acquire, mkAcquire, with)
 import           Data.ByteString        (ByteString)
-import           Data.ByteString.Char8  (unpack)
+import qualified Data.ByteString.Char8  as B8
 import           Data.Conduit
 import qualified Data.Conduit.List      as CL
 import           Data.Maybe
@@ -33,7 +33,7 @@ getLanguage conf = withContext $
 setupLanguage :: OracleConfig -> IO ()
 setupLanguage conf = do
   nl <- lookupEnv "NLS_LANG"
-  when (isNothing nl) $ getLanguage conf >>= setEnv "NLS_LANG" . unpack
+  when (isNothing nl) $ getLanguage conf >>= setEnv "NLS_LANG" . B8.unpack
 
 type Name = ByteString
 type SqlParam = (Name, IO DataValue)
@@ -61,8 +61,6 @@ queryAsRes conn sql ps = do
         bindValue st ps
         r  <- executeStatement st ModeExecDefault
         return (st,r)
-      {-# INLINE meg #-}
-      meg info value = DataField{..}
   (st,r) <- mkAcquire pst (void . releaseStatement . fst)
   let {-# INLINE pull #-}
       pull = do
@@ -72,12 +70,12 @@ queryAsRes conn sql ps = do
           (Just _) -> do
             vs <- liftIO $ mapM (getQueryValue st) [1..r]
             qs <- liftIO $ mapM (getQueryInfo  st) [1..r]
-            a  <- liftIO $ fromDataFields' $ zipWith meg qs vs
+            a  <- liftIO $ fromDataFields' $ zipWith DataField qs vs
             yield a
             pull
   return pull
 
 queryByPage :: FromDataFields a => PtrConn -> SQL -> [SqlParam] -> Page -> IO [a]
 queryByPage conn sql ps (offset,limit) = do
-  let sql' = sql <> " OFFSET " <> show offset <> " ROWS FETCH NEXT " <> show limit <> " ROWS ONLY"
+  let sql' = sql <> " OFFSET " <> B8.pack (show offset) <> " ROWS FETCH NEXT " <> B8.pack (show limit) <> " ROWS ONLY"
   with (queryAsRes conn sql' ps) (\a -> runConduit $ a .| CL.fold (flip (:)) [])
