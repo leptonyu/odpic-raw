@@ -298,26 +298,26 @@ instance Storable Data_ConnCreateParams where
         (np,nplen) = newPassword
         (tg,tglen) = tag
         (og,oglen) = outTag
-    {#set ConnCreateParams -> authMode                   #} p (fe authMode)                 
-    {#set ConnCreateParams -> connectionClass            #} p cc           
-    {#set ConnCreateParams -> connectionClassLength      #} p (fromIntegral cclen)     
-    {#set ConnCreateParams -> purity                     #} p (fe purity)                    
-    {#set ConnCreateParams -> newPassword                #} p np               
-    {#set ConnCreateParams -> newPasswordLength          #} p (fromIntegral nplen)         
-    {#set ConnCreateParams -> appContext                 #} p appContext                
-    {#set ConnCreateParams -> numAppContext              #} p numAppContext             
-    {#set ConnCreateParams -> externalAuth               #} p externalAuth              
-    {#set ConnCreateParams -> externalHandle             #} p externalHandle            
-    {#set ConnCreateParams -> pool                       #} p pool                      
-    {#set ConnCreateParams -> tag                        #} p tg                       
-    {#set ConnCreateParams -> tagLength                  #} p (fromIntegral tglen)                 
-    {#set ConnCreateParams -> matchAnyTag                #} p matchAnyTag               
-    {#set ConnCreateParams -> outTag                     #} p og                    
-    {#set ConnCreateParams -> outTagLength               #} p (fromIntegral oglen)              
-    {#set ConnCreateParams -> outTagFound                #} p outTagFound               
-    {#set ConnCreateParams -> shardingKeyColumns         #} p shardingKeyColumns        
-    {#set ConnCreateParams -> numShardingKeyColumns      #} p numShardingKeyColumns     
-    {#set ConnCreateParams -> superShardingKeyColumns    #} p superShardingKeyColumns   
+    {#set ConnCreateParams -> authMode                   #} p (fe authMode)
+    {#set ConnCreateParams -> connectionClass            #} p cc
+    {#set ConnCreateParams -> connectionClassLength      #} p (fromIntegral cclen)
+    {#set ConnCreateParams -> purity                     #} p (fe purity)
+    {#set ConnCreateParams -> newPassword                #} p np
+    {#set ConnCreateParams -> newPasswordLength          #} p (fromIntegral nplen)
+    {#set ConnCreateParams -> appContext                 #} p appContext
+    {#set ConnCreateParams -> numAppContext              #} p numAppContext
+    {#set ConnCreateParams -> externalAuth               #} p externalAuth
+    {#set ConnCreateParams -> externalHandle             #} p externalHandle
+    {#set ConnCreateParams -> pool                       #} p pool
+    {#set ConnCreateParams -> tag                        #} p tg
+    {#set ConnCreateParams -> tagLength                  #} p (fromIntegral tglen)
+    {#set ConnCreateParams -> matchAnyTag                #} p matchAnyTag
+    {#set ConnCreateParams -> outTag                     #} p og
+    {#set ConnCreateParams -> outTagLength               #} p (fromIntegral oglen)
+    {#set ConnCreateParams -> outTagFound                #} p outTagFound
+    {#set ConnCreateParams -> shardingKeyColumns         #} p shardingKeyColumns
+    {#set ConnCreateParams -> numShardingKeyColumns      #} p numShardingKeyColumns
+    {#set ConnCreateParams -> superShardingKeyColumns    #} p superShardingKeyColumns
     {#set ConnCreateParams -> numSuperShardingKeyColumns #} p numSuperShardingKeyColumns
   peek      p = do
     authMode                   <- te <$> {#get ConnCreateParams -> authMode                   #} p
@@ -453,13 +453,13 @@ instance Storable Data where
       go p (DataNull          _) = {#set Data -> isNull             #} p 1
       go p (DataBoolean       v) = {#set Data -> value.asBoolean    #} p (fromBool v)
       go p (DataIntervalDs    Data_IntervalDS{..}) = do
-        {#set Data -> value.asIntervalDS.days     #} p $ fromIntegral days    
-        {#set Data -> value.asIntervalDS.hours    #} p $ fromIntegral hours   
-        {#set Data -> value.asIntervalDS.minutes  #} p $ fromIntegral minutes 
-        {#set Data -> value.asIntervalDS.seconds  #} p $ fromIntegral seconds 
+        {#set Data -> value.asIntervalDS.days     #} p $ fromIntegral days
+        {#set Data -> value.asIntervalDS.hours    #} p $ fromIntegral hours
+        {#set Data -> value.asIntervalDS.minutes  #} p $ fromIntegral minutes
+        {#set Data -> value.asIntervalDS.seconds  #} p $ fromIntegral seconds
         {#set Data -> value.asIntervalDS.fseconds #} p $ fromIntegral fseconds
       go p (DataIntervalYm    (Data_IntervalYM {..})) = do
-        {#set Data -> value.asIntervalYM.years    #} p  years 
+        {#set Data -> value.asIntervalYM.years    #} p  years
         {#set Data -> value.asIntervalYM.months   #} p  months
       go p (DataChar          v) = sByt p v
       go p (DataLongRaw       v) = sByt p v
@@ -490,8 +490,14 @@ instance Storable Data where
       go p (DataTimestampD    v) = {#set Data -> value.asDouble #} p v
       go p (DataTimestampLtzD v) = {#set Data -> value.asDouble #} p v
       go p (DataTimestampTzD  v) = {#set Data -> value.asDouble #} p v
-  peek      = return . Data . go
+  peek      = return . Data . goWithNullCheck
     where
+      goWithNullCheck p t o = do
+        n <- {#get Data -> isNull #} p
+        if n == 1
+          then pure $ DataNull t
+          else go p t o
+
       go p NativeTypeBoolean    _ = (DataBoolean .toBool) <$> {#get Data -> value.asBoolean #} p
       go p NativeTypeInt64      o = (gInt o .ft)          <$> {#get Data -> value.asInt64   #} p
       go p NativeTypeUint64     o = (gUnt o .ft)          <$> {#get Data -> value.asUint64  #} p
@@ -1535,7 +1541,7 @@ libVarSetNumElementsInArray = {#call Var_setNumElementsInArray #}
 #if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
 libVarGetReturnedData       = {#call Var_getReturnedData       #}
 use2_4_0                    = True
-#else 
+#else
 libVarGetReturnedData       = error "No implement until 2.4.0"
 use2_4_0                    = False
 #endif
