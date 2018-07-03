@@ -1,6 +1,7 @@
 module Database.Dpi.Internal where
 
 import           Database.Dpi.Prelude
+import           Data.Scientific
 import qualified Data.ByteString.Unsafe as B
 
 #include <dpi.h>
@@ -365,7 +366,7 @@ data DataValue
   | DataUint           !Word64
   | DataNChar          !Data_Bytes
   | DataNClob          !(Ptr DPI_Lob)
-  | DataNumDouble      !CDouble
+  | DataNumDouble      !Scientific
   | DataNumBytes       !Data_Bytes
   | DataNumInt         !Int64
   | DataNumUint        !Word64
@@ -481,7 +482,7 @@ instance Storable Data where
       go p (DataFloat         v) = {#set Data -> value.asFloat  #} p v
       go p (DataInt           v) = {#set Data -> value.asInt64  #} p (fromIntegral v)
       go p (DataUint          v) = {#set Data -> value.asUint64 #} p (fromIntegral v)
-      go p (DataNumDouble     v) = {#set Data -> value.asDouble #} p v
+      go p (DataNumDouble     v) = {#set Data -> value.asDouble #} p (realToFrac v)
       go p (DataNumInt        v) = {#set Data -> value.asInt64  #} p (fromIntegral v)
       go p (DataNumUint       v) = {#set Data -> value.asUint64 #} p (fromIntegral v)
       go p (DataObject        v) = {#set Data -> value.asObject #} p v
@@ -552,7 +553,7 @@ gInt _                      = DataInt
 gUnt OracleTypeNumber       = DataNumUint
 gUnt OracleTypeNativeUint   = DataUint
 gUnt _                      = DataUint
-gDbl OracleTypeNumber       = DataNumDouble
+gDbl OracleTypeNumber       = DataNumDouble . realToFrac
 gDbl OracleTypeTimestamp    = DataTimestampD
 gDbl OracleTypeTimestampLtz = DataTimestampLtzD
 gDbl OracleTypeTimestampTz  = DataTimestampTzD

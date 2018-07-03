@@ -60,8 +60,17 @@ queryAsRes conn sql ps = do
         st <- prepareStatement conn False sql
         bindValue st ps
         r  <- executeStatement st ModeExecDefault
-        return (st,r)
-  (st,r) <- mkAcquire pst (void . releaseStatement . fst)
+        is <- mapM (go st) [1..r]
+        return (st,(is,r))
+      go st'@(cxt,_) ind = do
+        info'@Data_QueryInfo{..} <- getQueryInfo st' ind
+        let Data_DataTypeInfo{..} = typeInfo
+        if oracleTypeNum /= OracleTypeNumber && defaultNativeTypeNum /= NativeTypeBytes
+          then return info'
+          else do
+            _ <- defineValue st' ind oracleTypeNum NativeTypeBytes (fromIntegral dbSizeInBytes) True (cxt,objectType)
+            getQueryInfo st' ind
+  (st,(is,r)) <- mkAcquire pst (void . releaseStatement . fst)
   let {-# INLINE pull #-}
       pull = do
         mayC <- liftIO $ fetch st
@@ -69,13 +78,12 @@ queryAsRes conn sql ps = do
           Nothing  -> return ()
           (Just _) -> do
             vs <- liftIO $ mapM (getQueryValue st) [1..r]
-            qs <- liftIO $ mapM (getQueryInfo  st) [1..r]
-            a  <- liftIO $ fromDataFields' $ zipWith DataField qs vs
+            a  <- liftIO $ fromDataFields' $ zipWith DataField is vs
             yield a
             pull
   return pull
 
 queryByPage :: FromDataFields a => PtrConn -> SQL -> [SqlParam] -> Page -> IO [a]
 queryByPage conn sql ps (offset,limit) = do
-  let sql' = sql <> " OFFSET " <> B8.pack (show offset) <> " ROWS FETCH NEXT " <> B8.pack (show limit) <> " ROWS ONLY"
+  let sql' = sql <> " OFFSET " <> show offset <> " ROWS FETCH NEXT " <> show limit <> " ROWS ONLY"
   with (queryAsRes conn sql' ps) (\a -> runConduit $ a .| CL.fold (flip (:)) [])

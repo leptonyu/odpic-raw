@@ -21,11 +21,11 @@ import           Data.ByteString        (ByteString)
 import qualified Data.ByteString        as B
 import qualified Data.ByteString.Char8  as BC
 import qualified Data.ByteString.Unsafe as B
-import           Data.Decimal
 import           Data.Int               (Int64)
 import           Data.List              (intercalate)
 import           Data.Maybe
 import           Data.Monoid            ((<>))
+import           Data.Scientific
 import           Data.Time
 import           Data.Time.Clock.POSIX
 
@@ -74,18 +74,7 @@ instance FromDataField ByteString where
       go n _ _                     = singleError' n
 
 instance FromDataField Integer where
-  fromDataField DataField{..} = let Data_QueryInfo{..} = info in go name typeInfo value
-    where
-      go _ _ (DataNull          _) = return Nothing
-      go _ _ (DataInt           v) = return . Just $ toInteger v
-      go _ _ (DataUint          v) = return . Just $ toInteger v
-      go _ _ (DataNumInt        v) = return . Just $ toInteger v
-      go _ _ (DataNumUint       v) = return . Just $ toInteger v
-      go _ _ (DataFloat         v) = return . Just $ round     v
-      go _ _ (DataNumDouble     v) = return . Just $ round     v
-      go _ _ (DataDouble        v) = return . Just $ round     v
-      -- go _ _ (DataNumBytes      v) = !Data_Bytes
-      go n _ _                     = singleError' n
+  fromDataField = fmap (fmap (round :: Scientific -> Integer)) . fromDataField
 
 instance FromDataField Int where
   fromDataField = fmap (fmap fromInteger) . fromDataField
@@ -100,23 +89,12 @@ instance FromDataField Word64 where
   fromDataField = fmap (fmap fromInteger) . fromDataField
 
 instance FromDataField Double where
-  fromDataField DataField{..} = let Data_QueryInfo{..} = info in go name typeInfo value
-    where
-      go _ _ (DataNull          _) = return Nothing
-      go _ _ (DataInt           v) = return . Just $ realToFrac v
-      go _ _ (DataUint          v) = return . Just $ realToFrac v
-      go _ _ (DataNumInt        v) = return . Just $ realToFrac v
-      go _ _ (DataNumUint       v) = return . Just $ realToFrac v
-      go _ _ (DataFloat         v) = return . Just $ realToFrac v
-      go _ _ (DataNumDouble     v) = return . Just $ realToFrac v
-      go _ _ (DataDouble        v) = return . Just $ realToFrac v
-      -- go _ _ (DataNumBytes      v) = !Data_Bytes
-      go n _ _                     = singleError' n
+  fromDataField = fmap (fmap (realToFrac :: Scientific -> Double)) . fromDataField
 
 instance FromDataField Float where
-  fromDataField = fmap (fmap (realToFrac :: Double -> Float)) . fromDataField
+  fromDataField = fmap (fmap (realToFrac :: Scientific -> Float)) . fromDataField
 
-instance FromDataField Decimal where
+instance FromDataField Scientific where
   fromDataField DataField{..} = let Data_QueryInfo{..} = info in go name typeInfo value
     where
       go _ _ (DataNull          _) = return Nothing
@@ -127,7 +105,7 @@ instance FromDataField Decimal where
       go _ _ (DataFloat         v) = return . Just $ realToFrac v
       go _ _ (DataNumDouble     v) = return . Just $ realToFrac v
       go _ _ (DataDouble        v) = return . Just $ realToFrac v
-      -- go _ _ (DataNumBytes      v) = !Data_Bytes
+      go _ _ (DataNumBytes Data_Bytes{..}) = (Just . read . BC.unpack) <$> tsLen bytes
       go n _ _                     = singleError' n
 
 instance FromDataField Bool where
@@ -221,7 +199,7 @@ instance ToDataField Word where
 instance ToDataField Word64 where
   toDataField v = toDataField (toInteger v)
 
-instance ToDataField Decimal where
+instance ToDataField Scientific where
   toDataField v NativeTypeDouble OracleTypeNativeDouble = return $ DataDouble    $ realToFrac v
   toDataField v NativeTypeDouble OracleTypeNumber       = return $ DataNumDouble $ realToFrac v
   toDataField v NativeTypeFloat  OracleTypeNativeFloat  = return $ DataFloat     $ realToFrac v

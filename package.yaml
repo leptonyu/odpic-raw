@@ -14,7 +14,8 @@ dependencies:
   - resourcet
   - conduit
   - time
-  - Decimal
+  - scientific
+  - binary
 
 defaults:
   local: defaults.yaml
