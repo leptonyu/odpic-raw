@@ -2,7 +2,7 @@
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 6bfc330716b97e1c28da324ca652f3ff0ac5392bd369af74420f2c050fd4554b
+-- hash: f4ee54d31b035788d6b0b7a6b9fa00165f7e47fa9ef4572d26eac44dd8a48e8b
 
 name:           odpic-raw
 version:        0.3.0
@@ -39,11 +39,12 @@ library
   extra-libraries:
       odpic
   build-depends:
-      Decimal
-    , base >=4.7 && <5
+      base >=4.7 && <5
+    , binary
     , bytestring
     , conduit
     , resourcet
+    , scientific
     , time
   build-tools:
       c2hs
@@ -66,12 +67,13 @@ test-suite odpic-raw-test
   default-extensions: AutoDeriveTypeable BangPatterns BinaryLiterals ConstraintKinds DataKinds DefaultSignatures DeriveDataTypeable DeriveFoldable DeriveFunctor DeriveGeneric DeriveTraversable DuplicateRecordFields DoAndIfThenElse EmptyDataDecls ExistentialQuantification FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving InstanceSigs KindSignatures LambdaCase MonadFailDesugaring MultiParamTypeClasses MultiWayIf NamedFieldPuns OverloadedStrings PartialTypeSignatures PatternGuards PolyKinds RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TupleSections TypeApplications TypeFamilies TypeOperators TypeSynonymInstances ViewPatterns
   ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fno-warn-orphans -fno-warn-missing-signatures
   build-depends:
-      Decimal
-    , base
+      base
+    , binary
     , bytestring
     , conduit
     , hspec
     , odpic-raw
     , resourcet
+    , scientific
     , time
   default-language: Haskell2010

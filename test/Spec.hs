@@ -4,9 +4,11 @@
 
 import           Test.Hspec
 
+import           Control.Exception     (SomeException, catch)
 import qualified Data.ByteString       as B
 import qualified Data.ByteString.Char8 as BC
 import           Data.Monoid           ((<>))
+import           Data.Scientific
 import           Data.Time
 
 import           Database.Dpi
@@ -23,9 +25,11 @@ main = do
 
 prepareTable :: PtrConn -> IO ()
 prepareTable conn = do
-  _ <- execute conn "DROP TABLE TEST_T_NAME" []
+  let g :: SomeException -> IO Int
+      g _ = return 0
+  _ <- execute conn "DROP TABLE TEST_T_NAME" [] `catch` g
   _ <- execute conn "CREATE TABLE TEST_T_NAME(ID INTEGER PRIMARY KEY, NAME VARCHAR2(64) NOT NULL, CREATE_TIME TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL)" []
-  _ <- execute conn "DROP SEQUENCE TEST_SEQ_NAME" []
+  _ <- execute conn "DROP SEQUENCE TEST_SEQ_NAME" [] `catch` g
   _ <- execute conn "CREATE SEQUENCE TEST_SEQ_NAME" []
   return ()
 
@@ -41,6 +45,13 @@ instance FromDataFields IdName where
     Just name <- readDataField dfm "NAME"
     Just time <- readDataField dfm "CREATE_TIME"
     return IdName{..}
+
+data S = S  { avg :: Scientific } deriving Show
+
+instance FromDataFields S where
+  fromDataFields dfm = do
+    Just avg <- readDataField dfm "AVG"
+    return S{..}
 
 test :: IO ()
 test = hspec $ do
@@ -143,6 +154,10 @@ test = hspec $ do
           mapM_ (\i -> execute conn insert [("id",return $ DataInt i),("name",fmap DataVarchar . fromByteString . BC.pack $ "test-" <> show i)]) [1..100]
           _ <- commitConnection conn
           (queryByPage conn "SELECT * FROM TEST_T_NAME" [] (10,20) :: IO [IdName]) >>= print
+
+          [S{..}] <- queryByPage conn "select avg(milliseconds) as AVG from track" [] (0,1) :: IO [S]
+
+          avg `shouldBe` (393599.2121039109334855837853268626891236 :: Scientific)
 
 
 
