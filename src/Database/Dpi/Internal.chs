@@ -2113,7 +2113,11 @@ libSubscrRelease     = {#call Subscr_release      #}
 {-# INLINE libVarSetNumElementsInArray #-}
 libVarAddRef                = {#call Var_addRef                #}
 libVarCopyData              = {#call Var_copyData              #}
+#if DPI_MAJOR_VERSION >= 3
+libVarGetData               = {#call dpiVar_getReturnedData    #}
+#else
 libVarGetData               = {#call Var_getData               #}
+#endif
 libVarGetNumElementsInArray = {#call Var_getNumElementsInArray #}
 libVarGetSizeInBytes        = {#call Var_getSizeInBytes        #}
 libVarRelease               = {#call Var_release               #}
