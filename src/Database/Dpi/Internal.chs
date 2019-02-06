@@ -1702,7 +1702,11 @@ libConnGetStmtCacheSize    = {#call Conn_getStmtCacheSize    #}
 libConnNewDeqOptions       = {#call Conn_newDeqOptions       #}
 libConnNewEnqOptions       = {#call Conn_newEnqOptions       #}
 libConnNewMsgProps         = {#call Conn_newMsgProps         #}
+#if DPI_MAJOR_VERSION >= 3
+libConnNewSubscription     = {#call dpiConn_subscribe        #}
+#else
 libConnNewSubscription     = {#call Conn_newSubscription     #}
+#endif
 libConnNewTempLob          = {#call Conn_newTempLob          #}
 libConnNewVar              = {#call Conn_newVar              #}
 libConnPing                = {#call Conn_ping                #}
@@ -2084,10 +2088,15 @@ libRowidRelease        = {#call Rowid_release        #}
 {-# INLINE libSubscrClose       #-}
 {-# INLINE libSubscrPrepareStmt #-}
 {-# INLINE libSubscrRelease     #-}
-libSubscrAddRef      = {#call Subscr_addRef      #}
-libSubscrClose       = {#call Subscr_close       #}
-libSubscrPrepareStmt = {#call Subscr_prepareStmt #}
-libSubscrRelease     = {#call Subscr_release     #}
+libSubscrAddRef      = {#call Subscr_addRef       #}
+#if DPI_MAJOR_VERSION >= 3
+libSubscrClose       = {#call dpiConn_unsubscribe #}
+#else
+libSubscrClose       = {#call Subscr_close        #}
+#endif
+
+libSubscrPrepareStmt = {#call Subscr_prepareStmt  #}
+libSubscrRelease     = {#call Subscr_release      #}
 
 -- Var
 {-# INLINE libVarAddRef                #-}
