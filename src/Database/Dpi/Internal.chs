@@ -1849,7 +1849,6 @@ libEnqOptionsSetVisibility     = {#call EnqOptions_setVisibility     #}
 {-# INLINE libLobClose                   #-}
 {-# INLINE libLobCloseResource           #-}
 {-# INLINE libLobCopy                    #-}
-{-# INLINE libLobFlushBuffer             #-}
 {-# INLINE libLobGetBufferSize           #-}
 {-# INLINE libLobGetChunkSize            #-}
 {-# INLINE libLobGetDirectoryAndFileName #-}
@@ -1867,7 +1866,6 @@ libLobAddRef                  = {#call Lob_addRef                  #}
 libLobClose                   = {#call Lob_close                   #}
 libLobCloseResource           = {#call Lob_closeResource           #}
 libLobCopy                    = {#call Lob_copy                    #}
-libLobFlushBuffer             = {#call Lob_flushBuffer             #}
 libLobGetBufferSize           = {#call Lob_getBufferSize           #}
 libLobGetChunkSize            = {#call Lob_getChunkSize            #}
 libLobGetDirectoryAndFileName = {#call Lob_getDirectoryAndFileName #}
