@@ -1068,11 +1068,6 @@ isLobResourceOpen (cxt,p) = libLobGetIsResourceOpen p & outValue cxt peekBool
 copyLob :: PtrLob -> IO PtrLob
 copyLob p@(cxt,_)= (cxt,) <$> runVar libLobCopy p
 
--- | Flush or write all buffers for this LOB to the server.
-{-# INLINE flushLob #-}
-flushLob :: PtrLob -> IO Bool
-flushLob = runBool libLobFlushBuffer
-
 -- | Returns the size of the buffer needed to hold the number of characters specified for a buffer of the type
 -- associated with the LOB. If the LOB does not refer to a character LOB the value is returned unchanged.
 {-# INLINE getLobBufferSize #-}
