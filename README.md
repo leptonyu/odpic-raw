@@ -1,6 +1,6 @@
 # odpic-raw
 
-[![Hackage](https://img.shields.io/badge/hackage-v0.3.1-orange.svg)](https://hackage.haskell.org/package/odpic-raw)
+[![Hackage](https://img.shields.io/badge/hackage-v0.4.0-orange.svg)](https://hackage.haskell.org/package/odpic-raw)
 
 
 Haskell raw bindings to [Oracle ODPI-C Library](https://github.com/oracle/odpi)
@@ -8,7 +8,7 @@ Haskell raw bindings to [Oracle ODPI-C Library](https://github.com/oracle/odpi)
 
 Requirements:
 
-  * [libodpic 2.4.x/3.0.x](https://github.com/oracle/odpi/releases) (dpi.h should installed in /usr/local/include)
+  * [libodpic 2.4.x/3.x](https://github.com/oracle/odpi/releases) (dpi.h should installed in /usr/local/include)
   * [Oracle Instant Client Basic or Basic Light package](http://www.oracle.com/technetwork/database/features/instant-client/index-097480.html)
   * GHC 8.2.2 or greater
 
@@ -42,7 +42,7 @@ this project is not in stackage yet, please add `extra-deps` in `stack.yaml` con
 ```
 # for lts-11.x, lts-12.x, lts-13.x
 extra-deps:
-  - odpic-raw-0.3.1
+  - odpic-raw-0.4.0
 # for lts-10.x
 extra-deps:
   - odpic-raw-0.1.11

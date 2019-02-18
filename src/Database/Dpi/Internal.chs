@@ -24,624 +24,238 @@ success = {#const DPI_SUCCESS #}
 defaultDriverName :: ByteString
 defaultDriverName = {#const DPI_DEFAULT_DRIVER_NAME #}
 
-data Auth
+-- data Auth
 
-# if DPI_MAJOR_VERSION >= 3
-data AuthMode
-  = ModeAuthDefault | ModeAuthSysdba | ModeAuthSysoper
-  | ModeAuthPrelim | ModeAuthSysasm | ModeAuthSysBkp
-  | ModeAuthSysDgd | ModeAuthSyskmt | ModeAuthSysrac
-  deriving (Eq, Show)
-
-instance Enum AuthMode where
-  toEnum {#const DPI_MODE_AUTH_DEFAULT #} = ModeAuthDefault
-  toEnum {#const DPI_MODE_AUTH_SYSDBA #} = ModeAuthSysdba
-  toEnum {#const DPI_MODE_AUTH_SYSOPER #} = ModeAuthSysoper
-  toEnum {#const DPI_MODE_AUTH_PRELIM #} = ModeAuthPrelim
-  toEnum {#const DPI_MODE_AUTH_SYSASM #} = ModeAuthSysasm
-  toEnum {#const DPI_MODE_AUTH_SYSBKP #} = ModeAuthSysBkp
-  toEnum {#const DPI_MODE_AUTH_SYSDGD #} = ModeAuthSysDgd
-  toEnum {#const DPI_MODE_AUTH_SYSKMT #} = ModeAuthSyskmt
-  toEnum {#const DPI_MODE_AUTH_SYSRAC #} = ModeAuthSysrac
-  toEnum _ = error "Value invalid"
-  fromEnum ModeAuthDefault = {#const DPI_MODE_AUTH_DEFAULT #}
-  fromEnum ModeAuthSysdba = {#const DPI_MODE_AUTH_SYSDBA #}
-  fromEnum ModeAuthSysoper = {#const DPI_MODE_AUTH_SYSOPER #}
-  fromEnum ModeAuthPrelim = {#const DPI_MODE_AUTH_PRELIM #}
-  fromEnum ModeAuthSysasm = {#const DPI_MODE_AUTH_SYSASM #}
-  fromEnum ModeAuthSysBkp = {#const DPI_MODE_AUTH_SYSBKP #}
-  fromEnum ModeAuthSysDgd = {#const DPI_MODE_AUTH_SYSDGD #}
-  fromEnum ModeAuthSyskmt = {#const DPI_MODE_AUTH_SYSKMT #}
-  fromEnum ModeAuthSysrac = {#const DPI_MODE_AUTH_SYSRAC #}
+#if DPI_MAJOR_VERSION >= 3
+{#enum define AuthMode
+  { DPI_MODE_AUTH_DEFAULT as ModeAuthDefault
+  , DPI_MODE_AUTH_SYSDBA  as ModeAuthSysdba
+  , DPI_MODE_AUTH_SYSOPER as ModeAuthSysoper
+  , DPI_MODE_AUTH_PRELIM  as ModeAuthPrelim
+  , DPI_MODE_AUTH_SYSASM  as ModeAuthSysasm
+  , DPI_MODE_AUTH_SYSBKP  as ModeAuthSysbkp
+  , DPI_MODE_AUTH_SYSDGD  as ModeAuthSysdgd
+  , DPI_MODE_AUTH_SYSKMT  as ModeAuthSyskmt
+  , DPI_MODE_AUTH_SYSRAC  as ModeAuthSysrac
+  } deriving (Eq, Show) #}
+{#enum define ConnCloseMode       
+  { DPI_MODE_CONN_CLOSE_DEFAULT as ModeConnCloseDefault
+  , DPI_MODE_CONN_CLOSE_DROP    as ModeConnCloseDrop
+  , DPI_MODE_CONN_CLOSE_RETAG   as ModeConnCloseRetag
+  } deriving (Eq, Show) #}
+{#enum define CreateMode          
+  { DPI_MODE_CREATE_DEFAULT  as ModeCreateDefault
+  , DPI_MODE_CREATE_THREADED as ModeCreateThreaded
+  , DPI_MODE_CREATE_EVENTS   as ModeCreateEvents
+  } deriving (Eq, Show) #}
+{#enum define DeqMode             
+  { DPI_MODE_DEQ_BROWSE         as ModeDeqBrowse
+  , DPI_MODE_DEQ_LOCKED         as ModeDeqLocked
+  , DPI_MODE_DEQ_REMOVE         as ModeDeqRemove
+  , DPI_MODE_DEQ_REMOVE_NO_DATA as ModeDeqRemove_no_data
+  } deriving (Eq, Show) #}
+{#enum define DeqNavigation       
+  { DPI_DEQ_NAV_FIRST_MSG        as DeqNavFirstMsg
+  , DPI_DEQ_NAV_NEXT_TRANSACTION as DeqNavNextTransaction
+  , DPI_DEQ_NAV_NEXT_MSG         as DeqNavNextMsg
+  } deriving (Eq, Show) #}
+{#enum define EventType           
+  { DPI_EVENT_NONE         as EventNone
+  , DPI_EVENT_STARTUP      as EventStartup
+  , DPI_EVENT_SHUTDOWN     as EventShutdown
+  , DPI_EVENT_SHUTDOWN_ANY as EventShutdown_any
+  , DPI_EVENT_DROP_DB      as EventDrop_db
+  , DPI_EVENT_DEREG        as EventDereg
+  , DPI_EVENT_OBJCHANGE    as EventObjchange
+  , DPI_EVENT_QUERYCHANGE  as EventQuerychange
+  , DPI_EVENT_AQ           as EventAq
+  } deriving (Eq, Show) #}
+{#enum define ExecMode            
+  { DPI_MODE_EXEC_DEFAULT             as ModeExecDefault
+  , DPI_MODE_EXEC_DESCRIBE_ONLY       as ModeExecDescribeOnly
+  , DPI_MODE_EXEC_COMMIT_ON_SUCCESS   as ModeExecCommitOnSuccess
+  , DPI_MODE_EXEC_BATCH_ERRORS        as ModeExecBatchErrors
+  , DPI_MODE_EXEC_PARSE_ONLY          as ModeExecParseOnly
+  , DPI_MODE_EXEC_ARRAY_DML_ROWCOUNTS as ModeExecArrayDmlRowcounts
+  } deriving (Eq, Show) #}
+{#enum define FetchMode           
+  { DPI_MODE_FETCH_NEXT     as ModeFetchNext
+  , DPI_MODE_FETCH_FIRST    as ModeFetchFirst
+  , DPI_MODE_FETCH_LAST     as ModeFetchLast
+  , DPI_MODE_FETCH_PRIOR    as ModeFetchPrior
+  , DPI_MODE_FETCH_ABSOLUTE as ModeFetchAbsolute
+  , DPI_MODE_FETCH_RELATIVE as ModeFetchRelative
+  } deriving (Eq, Show) #}
+{#enum define MessageDeliveryMode 
+  { DPI_MODE_MSG_PERSISTENT             as ModeMsgPersistent
+  , DPI_MODE_MSG_BUFFERED               as ModeMsgBuffered
+  , DPI_MODE_MSG_PERSISTENT_OR_BUFFERED as ModeMsgPersistentOrBuffered
+  } deriving (Eq, Show) #}
+{#enum define MessageState        
+  { DPI_MSG_STATE_READY     as MsgStateReady
+  , DPI_MSG_STATE_WAITING   as MsgStateWaiting
+  , DPI_MSG_STATE_PROCESSED as MsgStateProcessed
+  , DPI_MSG_STATE_EXPIRED   as MsgStateExpired
+  } deriving (Eq, Show) #}
+{#enum define NativeTypeNum       
+  { DPI_NATIVE_TYPE_INT64       as NativeTypeInt64
+  , DPI_NATIVE_TYPE_UINT64      as NativeTypeUint64
+  , DPI_NATIVE_TYPE_FLOAT       as NativeTypeFloat
+  , DPI_NATIVE_TYPE_DOUBLE      as NativeTypeDouble
+  , DPI_NATIVE_TYPE_BYTES       as NativeTypeBytes
+  , DPI_NATIVE_TYPE_TIMESTAMP   as NativeTypeTimestamp
+  , DPI_NATIVE_TYPE_INTERVAL_DS as NativeTypeIntervalDs
+  , DPI_NATIVE_TYPE_INTERVAL_YM as NativeTypeIntervalYm
+  , DPI_NATIVE_TYPE_LOB         as NativeTypeLob
+  , DPI_NATIVE_TYPE_OBJECT      as NativeTypeObject
+  , DPI_NATIVE_TYPE_STMT        as NativeTypeStmt
+  , DPI_NATIVE_TYPE_BOOLEAN     as NativeTypeBoolean
+  , DPI_NATIVE_TYPE_ROWID       as NativeTypeRowid
+  } deriving (Eq, Show) #}
+{#enum define OpCode              
+  { DPI_OPCODE_ALL_OPS  as OpCodeAllOps
+  , DPI_OPCODE_ALL_ROWS as OpCodeAllRows
+  , DPI_OPCODE_INSERT   as OpCodeInsert
+  , DPI_OPCODE_UPDATE   as OpCodeUpdate
+  , DPI_OPCODE_DELETE   as OpCodeDelete
+  , DPI_OPCODE_ALTER    as OpCodeAlter
+  , DPI_OPCODE_DROP     as OpCodeDrop
+  , DPI_OPCODE_UNKNOWN  as OpCodeUnknown
+  } deriving (Eq, Show) #}
+{#enum define OracleTypeNum       
+  { DPI_ORACLE_TYPE_VARCHAR       as OracleTypeVarchar
+  , DPI_ORACLE_TYPE_NVARCHAR      as OracleTypeNvarchar
+  , DPI_ORACLE_TYPE_CHAR          as OracleTypeChar
+  , DPI_ORACLE_TYPE_NCHAR         as OracleTypeNchar
+  , DPI_ORACLE_TYPE_ROWID         as OracleTypeRowid
+  , DPI_ORACLE_TYPE_RAW           as OracleTypeRaw
+  , DPI_ORACLE_TYPE_NATIVE_FLOAT  as OracleTypeNativeFloat
+  , DPI_ORACLE_TYPE_NATIVE_DOUBLE as OracleTypeNativeDouble
+  , DPI_ORACLE_TYPE_NATIVE_INT    as OracleTypeNativeInt
+  , DPI_ORACLE_TYPE_NATIVE_UINT   as OracleTypeNativeUint
+  , DPI_ORACLE_TYPE_NUMBER        as OracleTypeNumber
+  , DPI_ORACLE_TYPE_DATE          as OracleTypeDate
+  , DPI_ORACLE_TYPE_TIMESTAMP     as OracleTypeTimestamp
+  , DPI_ORACLE_TYPE_TIMESTAMP_TZ  as OracleTypeTimestampTz
+  , DPI_ORACLE_TYPE_TIMESTAMP_LTZ as OracleTypeTimestampLtz
+  , DPI_ORACLE_TYPE_INTERVAL_DS   as OracleTypeIntervalDs
+  , DPI_ORACLE_TYPE_INTERVAL_YM   as OracleTypeIntervalYm
+  , DPI_ORACLE_TYPE_CLOB          as OracleTypeClob
+  , DPI_ORACLE_TYPE_NCLOB         as OracleTypeNclob
+  , DPI_ORACLE_TYPE_BLOB          as OracleTypeBlob
+  , DPI_ORACLE_TYPE_BFILE         as OracleTypeBfile
+  , DPI_ORACLE_TYPE_STMT          as OracleTypeStmt
+  , DPI_ORACLE_TYPE_BOOLEAN       as OracleTypeBoolean
+  , DPI_ORACLE_TYPE_OBJECT        as OracleTypeObject
+  , DPI_ORACLE_TYPE_LONG_VARCHAR  as OracleTypeLongVarchar
+  , DPI_ORACLE_TYPE_LONG_RAW      as OracleTypeLongRaw
+  } deriving (Eq, Show) #}
+{#enum define PoolCloseMode       
+  { DPI_MODE_POOL_CLOSE_DEFAULT as ModePoolCloseDefault
+  , DPI_MODE_POOL_CLOSE_FORCE   as ModePoolCloseForce
+  } deriving (Eq, Show) #}
+{#enum define PoolGetMode         
+  { DPI_MODE_POOL_GET_WAIT      as ModePoolGetWait
+  , DPI_MODE_POOL_GET_NOWAIT    as ModePoolGetNowait
+  , DPI_MODE_POOL_GET_FORCEGET  as ModePoolGetForceget
+  , DPI_MODE_POOL_GET_TIMEDWAIT as ModePoolGetTimedwait
+  } deriving (Eq, Show) #}
+{#enum define Purity              
+  { DPI_PURITY_DEFAULT as PurityDefault
+  , DPI_PURITY_NEW     as PurityNew
+  , DPI_PURITY_SELF    as PuritySelf
+  } deriving (Eq, Show) #}
+{#enum define ShutdownMode        
+  { DPI_MODE_SHUTDOWN_DEFAULT             as ModeShutdownDefault
+  , DPI_MODE_SHUTDOWN_TRANSACTIONAL       as ModeShutdownTransactional
+  , DPI_MODE_SHUTDOWN_TRANSACTIONAL_LOCAL as ModeShutdownTransactionalLocal
+  , DPI_MODE_SHUTDOWN_IMMEDIATE           as ModeShutdownImmediate
+  , DPI_MODE_SHUTDOWN_ABORT               as ModeShutdownAbort
+  , DPI_MODE_SHUTDOWN_FINAL               as ModeShutdownFinal
+  } deriving (Eq, Show) #}
+{#enum define SodaFlags         
+  { DPI_SODA_FLAGS_DEFAULT          as SodaFlagsDefault
+  , DPI_SODA_FLAGS_ATOMIC_COMMIT    as SodaFlagsAtomicCommit
+  , DPI_SODA_FLAGS_CREATE_COLL_MAP  as SodaFlagsCreateCollMap
+  , DPI_SODA_FLAGS_INDEX_DROP_FORCE as SodaFlagsIndexDropForce
+  } deriving (Eq, Show) #}
+{#enum define StartupMode         
+  { DPI_MODE_STARTUP_DEFAULT  as ModeStartupDefault
+  , DPI_MODE_STARTUP_FORCE    as ModeStartupForce
+  , DPI_MODE_STARTUP_RESTRICT as ModeStartupRestrict
+  } deriving (Eq, Show) #}
+{#enum define StatementType       
+  { DPI_STMT_TYPE_UNKNOWN      as StmtTypeUnknown
+  , DPI_STMT_TYPE_SELECT       as StmtTypeSelect
+  , DPI_STMT_TYPE_UPDATE       as StmtTypeUpdate
+  , DPI_STMT_TYPE_DELETE       as StmtTypeDelete
+  , DPI_STMT_TYPE_INSERT       as StmtTypeInsert
+  , DPI_STMT_TYPE_CREATE       as StmtTypeCreate
+  , DPI_STMT_TYPE_DROP         as StmtTypeDrop
+  , DPI_STMT_TYPE_ALTER        as StmtTypeAlter
+  , DPI_STMT_TYPE_BEGIN        as StmtTypeBegin
+  , DPI_STMT_TYPE_DECLARE      as StmtTypeDeclare
+  , DPI_STMT_TYPE_CALL         as StmtTypeCall
+  , DPI_STMT_TYPE_MERGE        as StmtTypeMerge
+  , DPI_STMT_TYPE_EXPLAIN_PLAN as StmtTypeExplainPlan
+  , DPI_STMT_TYPE_COMMIT       as StmtTypeCommit
+  , DPI_STMT_TYPE_ROLLBACK     as StmtTypeRollback
+  } deriving (Eq, Show) #}
+{#enum define SubscrNamespace     
+  { DPI_SUBSCR_NAMESPACE_AQ       as SubscrNamespaceAq
+  , DPI_SUBSCR_NAMESPACE_DBCHANGE as SubscrNamespaceDbchange
+  } deriving (Eq, Show) #}
+{#enum define SubscrProtocol      
+  { DPI_SUBSCR_PROTO_CALLBACK as SubscrProtoCallback
+  , DPI_SUBSCR_PROTO_MAIL     as SubscrProtoMail
+  , DPI_SUBSCR_PROTO_PLSQL    as SubscrProtoPlsql
+  , DPI_SUBSCR_PROTO_HTTP     as SubscrProtoHttp
+  } deriving (Eq, Show) #}
+{#enum define SubscrQOS           
+  { DPI_SUBSCR_QOS_RELIABLE    as SubscrQosReliable
+  , DPI_SUBSCR_QOS_DEREG_NFY   as SubscrQosDeregNfy
+  , DPI_SUBSCR_QOS_ROWIDS      as SubscrQosRowids
+  , DPI_SUBSCR_QOS_QUERY       as SubscrQosQuery
+  , DPI_SUBSCR_QOS_BEST_EFFORT as SubscrQosBestEffort
+  } deriving (Eq, Show) #}
+{#enum define Visibility          
+  { DPI_VISIBILITY_IMMEDIATE as VisibilityImmediate
+  , DPI_VISIBILITY_ON_COMMIT as VisibilityOnCommit
+  } deriving (Eq, Show) #}
 #else
 {#enum AuthMode            as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data ConnCloseMode
-  = ModeConnCloseDefault | ModeConnCloseDrop | ModeConnCloseRetag
-  deriving (Eq, Show)
-
-instance Enum ConnCloseMode where
-  toEnum {#const DPI_MODE_CONN_CLOSE_DEFAULT #} = ModeConnCloseDefault
-  toEnum {#const DPI_MODE_CONN_CLOSE_DROP #} = ModeConnCloseDrop
-  toEnum {#const DPI_MODE_CONN_CLOSE_RETAG #} = ModeConnCloseRetag
-  toEnum _ = error "Value invalid"
-  fromEnum ModeConnCloseDefault = {#const DPI_MODE_CONN_CLOSE_DEFAULT #}
-  fromEnum ModeConnCloseDrop = {#const DPI_MODE_CONN_CLOSE_DROP #}
-  fromEnum ModeConnCloseRetag = {#const DPI_MODE_CONN_CLOSE_RETAG #}
-#else
 {#enum ConnCloseMode       as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data CreateMode
-  = ModeCreateDefault | ModeCreateThreaded | ModeCreateEvents
-  deriving (Eq, Show)
-
-instance Enum CreateMode where
-  toEnum {#const DPI_MODE_CREATE_DEFAULT #} = ModeCreateDefault
-  toEnum {#const DPI_MODE_CREATE_THREADED #} = ModeCreateThreaded
-  toEnum {#const DPI_MODE_CREATE_EVENTS #} = ModeCreateEvents
-  toEnum _ = error "Value invalid"
-  fromEnum ModeCreateDefault = {#const DPI_MODE_CREATE_DEFAULT #}
-  fromEnum ModeCreateThreaded = {#const DPI_MODE_CREATE_THREADED #}
-  fromEnum ModeCreateEvents = {#const DPI_MODE_CREATE_EVENTS #}
-#else
 {#enum CreateMode          as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data DeqMode
-  = ModeDeqBrowse | ModeDeqLocked | ModeDeqRemove | ModeDeqRemoveNoData
-  deriving(Eq, Show)
-
-instance Enum DeqMode where
-  toEnum {#const DPI_MODE_DEQ_BROWSE #} = ModeDeqBrowse
-  toEnum {#const DPI_MODE_DEQ_LOCKED #} = ModeDeqLocked
-  toEnum {#const DPI_MODE_DEQ_REMOVE #} = ModeDeqRemove
-  toEnum {#const DPI_MODE_DEQ_REMOVE_NO_DATA #} = ModeDeqRemoveNoData
-  toEnum _ = error "Value invalid"
-  fromEnum ModeDeqBrowse = {#const DPI_MODE_DEQ_BROWSE #}
-  fromEnum ModeDeqLocked = {#const DPI_MODE_DEQ_LOCKED #}
-  fromEnum ModeDeqRemove = {#const DPI_MODE_DEQ_REMOVE #}
-  fromEnum ModeDeqRemoveNoData = {#const DPI_MODE_DEQ_REMOVE_NO_DATA #}
-#else
 {#enum DeqMode             as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data DeqNavigation
-  = DeqNavFirstMsg | DeqNavNextTransaction | DeqNavNextMsg
-  deriving(Eq, Show)
-
-instance Enum DeqNavigation where
-  toEnum {#const DPI_DEQ_NAV_FIRST_MSG #} = DeqNavFirstMsg
-  toEnum {#const DPI_DEQ_NAV_NEXT_TRANSACTION #} = DeqNavNextTransaction
-  toEnum {#const DPI_DEQ_NAV_NEXT_MSG #} = DeqNavNextMsg
-  toEnum _ = error "Value invalid"
-  fromEnum DeqNavFirstMsg = {#const DPI_DEQ_NAV_FIRST_MSG #}
-  fromEnum DeqNavNextTransaction = {#const DPI_DEQ_NAV_NEXT_TRANSACTION #}
-  fromEnum DeqNavNextMsg = {#const DPI_DEQ_NAV_NEXT_MSG #}
-#else
 {#enum DeqNavigation       as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data EventType
-  = EventNone | EventStartup | EventShutdown | EventShutdownAny
-  | EventDropDb | EventDereg | EventObjchange | EventQuerychange | EventAq
-  deriving(Eq, Show)
-
-instance Enum EventType where
-  toEnum {#const DPI_EVENT_NONE #} = EventNone
-  toEnum {#const DPI_EVENT_STARTUP #} = EventStartup
-  toEnum {#const DPI_EVENT_SHUTDOWN #} = EventShutdown
-  toEnum {#const DPI_EVENT_SHUTDOWN_ANY #} = EventShutdownAny
-  toEnum {#const DPI_EVENT_DROP_DB #} = EventDropDb
-  toEnum {#const DPI_EVENT_DEREG #} = EventDereg
-  toEnum {#const DPI_EVENT_OBJCHANGE #} = EventObjchange
-  toEnum {#const DPI_EVENT_QUERYCHANGE #} = EventQuerychange
-  toEnum {#const DPI_EVENT_AQ #} = EventAq
-  toEnum _ = error "Value invalid"
-  fromEnum EventNone = {#const DPI_EVENT_NONE #}
-  fromEnum EventStartup = {#const DPI_EVENT_STARTUP #}
-  fromEnum EventShutdown = {#const DPI_EVENT_SHUTDOWN #}
-  fromEnum EventShutdownAny = {#const DPI_EVENT_SHUTDOWN_ANY #}
-  fromEnum EventDropDb = {#const DPI_EVENT_DROP_DB #}
-  fromEnum EventDereg = {#const DPI_EVENT_DEREG #}
-  fromEnum EventObjchange = {#const DPI_EVENT_OBJCHANGE #}
-  fromEnum EventQuerychange = {#const DPI_EVENT_QUERYCHANGE #}
-  fromEnum EventAq = {#const DPI_EVENT_AQ #}
-#else
 {#enum EventType           as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data ExecMode
-  = ModeExecDefault | ModeExecDescribeOnly | ModeExecCommitOnSuccess
-  | ModeExecBatchErrors | ModeExecParseOnly | ModeExecArrayDmlRowcounts
-  deriving(Eq, Show)
-
-instance Enum ExecMode where
-  toEnum {#const DPI_MODE_EXEC_DEFAULT #} = ModeExecDefault
-  toEnum {#const DPI_MODE_EXEC_DESCRIBE_ONLY #} = ModeExecDescribeOnly
-  toEnum {#const DPI_MODE_EXEC_COMMIT_ON_SUCCESS #} = ModeExecCommitOnSuccess
-  toEnum {#const DPI_MODE_EXEC_BATCH_ERRORS #} = ModeExecBatchErrors
-  toEnum {#const DPI_MODE_EXEC_PARSE_ONLY #} = ModeExecParseOnly
-  toEnum {#const DPI_MODE_EXEC_ARRAY_DML_ROWCOUNTS #} = ModeExecArrayDmlRowcounts
-  toEnum _ = error "Value invalid"
-  fromEnum ModeExecDefault = {#const DPI_MODE_EXEC_DEFAULT #}
-  fromEnum ModeExecDescribeOnly = {#const DPI_MODE_EXEC_DESCRIBE_ONLY #}
-  fromEnum ModeExecCommitOnSuccess = {#const DPI_MODE_EXEC_COMMIT_ON_SUCCESS #}
-  fromEnum ModeExecBatchErrors = {#const DPI_MODE_EXEC_BATCH_ERRORS #}
-  fromEnum ModeExecParseOnly = {#const DPI_MODE_EXEC_PARSE_ONLY #}
-  fromEnum ModeExecArrayDmlRowcounts = {#const DPI_MODE_EXEC_ARRAY_DML_ROWCOUNTS #}
-#else
 {#enum ExecMode            as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data FetchMode
-  = ModeFetchNext | ModeFetchFirst | ModeFetchLast
-  | ModeFetchPrior | ModeFetchAbsolute | ModeFetchRelative
-  deriving(Eq, Show)
-
-instance Enum FetchMode where
-  toEnum {#const DPI_MODE_FETCH_NEXT #} = ModeFetchNext
-  toEnum {#const DPI_MODE_FETCH_FIRST #} = ModeFetchFirst
-  toEnum {#const DPI_MODE_FETCH_LAST #} = ModeFetchLast
-  toEnum {#const DPI_MODE_FETCH_PRIOR #} = ModeFetchPrior
-  toEnum {#const DPI_MODE_FETCH_ABSOLUTE #} = ModeFetchAbsolute
-  toEnum {#const DPI_MODE_FETCH_RELATIVE #} = ModeFetchRelative
-  toEnum _ = error "Value invalid"
-  fromEnum ModeFetchNext = {#const DPI_MODE_FETCH_NEXT #}
-  fromEnum ModeFetchFirst = {#const DPI_MODE_FETCH_FIRST #}
-  fromEnum ModeFetchLast = {#const DPI_MODE_FETCH_LAST #}
-  fromEnum ModeFetchPrior = {#const DPI_MODE_FETCH_PRIOR #}
-  fromEnum ModeFetchAbsolute = {#const DPI_MODE_FETCH_ABSOLUTE #}
-  fromEnum ModeFetchRelative = {#const DPI_MODE_FETCH_RELATIVE #}
-#else
 {#enum FetchMode           as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data MessageDeliveryMode
-  = ModeMsgPersistent | ModeMsgBuffered | ModeMsgPersistentOrBuffered
-  deriving(Eq, Show)
-
-instance Enum MessageDeliveryMode where
-  toEnum {#const DPI_MODE_MSG_PERSISTENT #} = ModeMsgPersistent
-  toEnum {#const DPI_MODE_MSG_BUFFERED #} = ModeMsgBuffered
-  toEnum {#const DPI_MODE_MSG_PERSISTENT_OR_BUFFERED #} = ModeMsgPersistentOrBuffered
-  toEnum _ = error "Value invalid"
-  fromEnum ModeMsgPersistent = {#const DPI_MODE_MSG_PERSISTENT #}
-  fromEnum ModeMsgBuffered = {#const DPI_MODE_MSG_BUFFERED #}
-  fromEnum ModeMsgPersistentOrBuffered = {#const DPI_MODE_MSG_PERSISTENT_OR_BUFFERED #}
-#else
 {#enum MessageDeliveryMode as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >=3
-data MessageState
-  = MsgStateReady | MsgStateWaiting | MsgStateProcessed | MsgStateExpired
-  deriving(Eq, Show)
-
-instance Enum MessageState where
-  toEnum {#const DPI_MSG_STATE_READY #} = MsgStateReady
-  toEnum {#const DPI_MSG_STATE_WAITING #} = MsgStateWaiting
-  toEnum {#const DPI_MSG_STATE_PROCESSED #} = MsgStateProcessed
-  toEnum {#const DPI_MSG_STATE_EXPIRED #} = MsgStateExpired
-  toEnum _ = error "Value invalid"
-  fromEnum MsgStateReady = {#const DPI_MSG_STATE_READY #}
-  fromEnum MsgStateWaiting = {#const DPI_MSG_STATE_WAITING #}
-  fromEnum MsgStateProcessed = {#const DPI_MSG_STATE_PROCESSED #}
-  fromEnum MsgStateExpired = {#const DPI_MSG_STATE_EXPIRED #}
-#else
 {#enum MessageState        as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data NativeTypeNum
-  = NativeTypeInt64
-  | NativeTypeUint64
-  | NativeTypeFloat
-  | NativeTypeDouble
-  | NativeTypeBytes
-  | NativeTypeTimestamp
-  | NativeTypeIntervalDs
-  | NativeTypeIntervalYm
-  | NativeTypeLob
-  | NativeTypeObject
-  | NativeTypeStmt
-  | NativeTypeBoolean
-  | NativeTypeRowid
-  deriving(Eq, Show)
-
-instance Enum NativeTypeNum where
-  toEnum {#const DPI_NATIVE_TYPE_INT64 #} = NativeTypeInt64
-  toEnum {#const DPI_NATIVE_TYPE_UINT64 #} = NativeTypeUint64
-  toEnum {#const DPI_NATIVE_TYPE_FLOAT #} = NativeTypeFloat
-  toEnum {#const DPI_NATIVE_TYPE_DOUBLE #} = NativeTypeDouble
-  toEnum {#const DPI_NATIVE_TYPE_BYTES #} = NativeTypeBytes
-  toEnum {#const DPI_NATIVE_TYPE_TIMESTAMP #} = NativeTypeTimestamp
-  toEnum {#const DPI_NATIVE_TYPE_INTERVAL_DS #} = NativeTypeIntervalDs
-  toEnum {#const DPI_NATIVE_TYPE_INTERVAL_YM #} = NativeTypeIntervalYm
-  toEnum {#const DPI_NATIVE_TYPE_LOB #} = NativeTypeLob
-  toEnum {#const DPI_NATIVE_TYPE_OBJECT #} = NativeTypeObject
-  toEnum {#const DPI_NATIVE_TYPE_STMT #} = NativeTypeStmt
-  toEnum {#const DPI_NATIVE_TYPE_BOOLEAN #} = NativeTypeBoolean
-  toEnum {#const DPI_NATIVE_TYPE_ROWID #} = NativeTypeRowid
-  toEnum _ = error "Value invalid"
-  fromEnum NativeTypeInt64 = {#const DPI_NATIVE_TYPE_INT64 #}
-  fromEnum NativeTypeUint64 = {#const DPI_NATIVE_TYPE_UINT64 #}
-  fromEnum NativeTypeFloat = {#const DPI_NATIVE_TYPE_FLOAT #}
-  fromEnum NativeTypeDouble = {#const DPI_NATIVE_TYPE_DOUBLE #}
-  fromEnum NativeTypeBytes = {#const DPI_NATIVE_TYPE_BYTES #}
-  fromEnum NativeTypeTimestamp = {#const DPI_NATIVE_TYPE_TIMESTAMP #}
-  fromEnum NativeTypeIntervalDs = {#const DPI_NATIVE_TYPE_INTERVAL_DS #}
-  fromEnum NativeTypeIntervalYm = {#const DPI_NATIVE_TYPE_INTERVAL_YM #}
-  fromEnum NativeTypeLob = {#const DPI_NATIVE_TYPE_LOB #}
-  fromEnum NativeTypeObject = {#const DPI_NATIVE_TYPE_OBJECT #}
-  fromEnum NativeTypeStmt = {#const DPI_NATIVE_TYPE_STMT #}
-  fromEnum NativeTypeBoolean = {#const DPI_NATIVE_TYPE_BOOLEAN #}
-  fromEnum NativeTypeRowid = {#const DPI_NATIVE_TYPE_ROWID #}
-#else
 {#enum NativeTypeNum       as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-
-#if DPI_MAJOR_VERSION >= 3
-data OpCode
-  = OpcodeAllOps
-  | OpcodeAllRows
-  | OpcodeInsert
-  | OpcodeUpdate
-  | OpcodeDelete
-  | OpcodeAlter
-  | OpcodeDrop
-  | OpcodeUnknown
-  deriving(Eq, Show)
-
-instance Enum OpCode where
-  toEnum {#const DPI_OPCODE_ALL_OPS #} = OpcodeAllOps
-  toEnum {#const DPI_OPCODE_ALL_ROWS #} = OpcodeAllRows
-  toEnum {#const DPI_OPCODE_INSERT #} = OpcodeInsert
-  toEnum {#const DPI_OPCODE_UPDATE #} = OpcodeUpdate
-  toEnum {#const DPI_OPCODE_DELETE #} = OpcodeDelete
-  toEnum {#const DPI_OPCODE_ALTER #} = OpcodeAlter
-  toEnum {#const DPI_OPCODE_DROP #} = OpcodeDrop
-  toEnum {#const DPI_OPCODE_UNKNOWN #} = OpcodeUnknown
-  toEnum _ = error "Value invalid"
-  fromEnum OpcodeAllOps = {#const DPI_OPCODE_ALL_OPS #}
-  fromEnum OpcodeAllRows = {#const DPI_OPCODE_ALL_ROWS #}
-  fromEnum OpcodeInsert = {#const DPI_OPCODE_INSERT #}
-  fromEnum OpcodeUpdate = {#const DPI_OPCODE_UPDATE #}
-  fromEnum OpcodeDelete = {#const DPI_OPCODE_DELETE #}
-  fromEnum OpcodeAlter = {#const DPI_OPCODE_ALTER #}
-  fromEnum OpcodeDrop = {#const DPI_OPCODE_DROP #}
-  fromEnum OpcodeUnknown = {#const DPI_OPCODE_UNKNOWN #}
-
-#else
 {#enum OpCode              as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data OracleTypeNum
-  = OracleTypeNone
-  | OracleTypeVarchar
-  | OracleTypeNvarchar
-  | OracleTypeChar
-  | OracleTypeNchar
-  | OracleTypeRowid
-  | OracleTypeRaw
-  | OracleTypeNativeFloat
-  | OracleTypeNativeDouble
-  | OracleTypeNativeInt
-  | OracleTypeNumber
-  | OracleTypeDate
-  | OracleTypeTimestamp
-  | OracleTypeTimestampTz
-  | OracleTypeTimestampLtz
-  | OracleTypeIntervalDs
-  | OracleTypeIntervalYm
-  | OracleTypeClob
-  | OracleTypeNclob
-  | OracleTypeBlob
-  | OracleTypeBfile
-  | OracleTypeStmt
-  | OracleTypeBoolean
-  | OracleTypeObject
-  | OracleTypeLongVarchar
-  | OracleTypeLongRaw
-  | OracleTypeNativeUint
-  deriving(Eq, Show)
-  --TODO: OracleTypeMax
-
-instance Enum OracleTypeNum where
-  toEnum {#const DPI_ORACLE_TYPE_NONE #} = OracleTypeNone
-  toEnum {#const DPI_ORACLE_TYPE_VARCHAR #} = OracleTypeVarchar
-  toEnum {#const DPI_ORACLE_TYPE_NVARCHAR #} = OracleTypeNvarchar
-  toEnum {#const DPI_ORACLE_TYPE_CHAR #} = OracleTypeChar
-  toEnum {#const DPI_ORACLE_TYPE_NCHAR #} = OracleTypeNchar
-  toEnum {#const DPI_ORACLE_TYPE_ROWID #} = OracleTypeRowid
-  toEnum {#const DPI_ORACLE_TYPE_RAW #} = OracleTypeRaw
-  toEnum {#const DPI_ORACLE_TYPE_NATIVE_FLOAT #} = OracleTypeNativeFloat
-  toEnum {#const DPI_ORACLE_TYPE_NATIVE_DOUBLE #} = OracleTypeNativeDouble
-  toEnum {#const DPI_ORACLE_TYPE_NATIVE_INT #} = OracleTypeNativeInt
-  toEnum {#const DPI_ORACLE_TYPE_NUMBER #} = OracleTypeNumber
-  toEnum {#const DPI_ORACLE_TYPE_DATE #} = OracleTypeDate
-  toEnum {#const DPI_ORACLE_TYPE_TIMESTAMP #} = OracleTypeTimestamp
-  toEnum {#const DPI_ORACLE_TYPE_TIMESTAMP_TZ #} = OracleTypeTimestampTz
-  toEnum {#const DPI_ORACLE_TYPE_TIMESTAMP_LTZ #} = OracleTypeTimestampLtz
-  toEnum {#const DPI_ORACLE_TYPE_INTERVAL_DS #} = OracleTypeIntervalDs
-  toEnum {#const DPI_ORACLE_TYPE_INTERVAL_YM #} = OracleTypeIntervalYm
-  toEnum {#const DPI_ORACLE_TYPE_CLOB #} = OracleTypeClob
-  toEnum {#const DPI_ORACLE_TYPE_NCLOB #} = OracleTypeNclob
-  toEnum {#const DPI_ORACLE_TYPE_BLOB #} = OracleTypeBlob
-  toEnum {#const DPI_ORACLE_TYPE_BFILE #} = OracleTypeBfile
-  toEnum {#const DPI_ORACLE_TYPE_STMT #} = OracleTypeStmt
-  toEnum {#const DPI_ORACLE_TYPE_BOOLEAN #} = OracleTypeBoolean
-  toEnum {#const DPI_ORACLE_TYPE_OBJECT #} = OracleTypeObject
-  toEnum {#const DPI_ORACLE_TYPE_LONG_VARCHAR #} = OracleTypeLongVarchar
-  toEnum {#const DPI_ORACLE_TYPE_LONG_RAW #} = OracleTypeLongRaw
-  toEnum {#const DPI_ORACLE_TYPE_NATIVE_UINT #} = OracleTypeNativeUint
-  toEnum _ = error "Value invalid"
-  fromEnum OracleTypeNone = {#const DPI_ORACLE_TYPE_NONE #}
-  fromEnum OracleTypeVarchar = {#const DPI_ORACLE_TYPE_VARCHAR #}
-  fromEnum OracleTypeNvarchar = {#const DPI_ORACLE_TYPE_NVARCHAR #}
-  fromEnum OracleTypeChar = {#const DPI_ORACLE_TYPE_CHAR #}
-  fromEnum OracleTypeNchar = {#const DPI_ORACLE_TYPE_NCHAR #}
-  fromEnum OracleTypeRowid = {#const DPI_ORACLE_TYPE_ROWID #}
-  fromEnum OracleTypeRaw = {#const DPI_ORACLE_TYPE_RAW #}
-  fromEnum OracleTypeNativeFloat = {#const DPI_ORACLE_TYPE_NATIVE_FLOAT #}
-  fromEnum OracleTypeNativeDouble = {#const DPI_ORACLE_TYPE_NATIVE_DOUBLE #}
-  fromEnum OracleTypeNativeInt = {#const DPI_ORACLE_TYPE_NATIVE_INT #}
-  fromEnum OracleTypeNumber = {#const DPI_ORACLE_TYPE_NUMBER #}
-  fromEnum OracleTypeDate = {#const DPI_ORACLE_TYPE_DATE #}
-  fromEnum OracleTypeTimestamp = {#const DPI_ORACLE_TYPE_TIMESTAMP #}
-  fromEnum OracleTypeTimestampTz = {#const DPI_ORACLE_TYPE_TIMESTAMP_TZ #}
-  fromEnum OracleTypeTimestampLtz = {#const DPI_ORACLE_TYPE_TIMESTAMP_LTZ #}
-  fromEnum OracleTypeIntervalDs = {#const DPI_ORACLE_TYPE_INTERVAL_DS #}
-  fromEnum OracleTypeIntervalYm = {#const DPI_ORACLE_TYPE_INTERVAL_YM #}
-  fromEnum OracleTypeClob = {#const DPI_ORACLE_TYPE_CLOB #}
-  fromEnum OracleTypeNclob = {#const DPI_ORACLE_TYPE_NCLOB #}
-  fromEnum OracleTypeBlob = {#const DPI_ORACLE_TYPE_BLOB #}
-  fromEnum OracleTypeBfile = {#const DPI_ORACLE_TYPE_BFILE #}
-  fromEnum OracleTypeStmt = {#const DPI_ORACLE_TYPE_STMT #}
-  fromEnum OracleTypeBoolean = {#const DPI_ORACLE_TYPE_BOOLEAN #}
-  fromEnum OracleTypeObject = {#const DPI_ORACLE_TYPE_OBJECT #}
-  fromEnum OracleTypeLongVarchar = {#const DPI_ORACLE_TYPE_LONG_VARCHAR #}
-  fromEnum OracleTypeLongRaw = {#const DPI_ORACLE_TYPE_LONG_RAW #}
-  fromEnum OracleTypeNativeUint = {#const DPI_ORACLE_TYPE_NATIVE_UINT #}
-#else
 {#enum OracleTypeNum       as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data PoolCloseMode
-  = ModePoolCloseDefault | ModePoolCloseForce
-  deriving(Eq, Show)
-
-instance Enum PoolCloseMode where
-  toEnum {#const DPI_MODE_POOL_CLOSE_DEFAULT #} = ModePoolCloseDefault
-  toEnum {#const DPI_MODE_POOL_CLOSE_FORCE #} = ModePoolCloseForce
-  toEnum _ = error "Value invalid"
-  fromEnum ModePoolCloseDefault = {#const DPI_MODE_POOL_CLOSE_DEFAULT #}
-  fromEnum ModePoolCloseForce = {#const DPI_MODE_POOL_CLOSE_FORCE #}
-#else
 {#enum PoolCloseMode       as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data PoolGetMode
-  = ModePoolGetWait | ModePoolGetNowait | ModePoolGetForceget | ModePoolGetTimedwait
-  deriving(Eq, Show)
-
-instance Enum PoolGetMode where
-  toEnum {#const DPI_MODE_POOL_GET_WAIT #} = ModePoolGetWait
-  toEnum {#const DPI_MODE_POOL_GET_NOWAIT #} = ModePoolGetNowait
-  toEnum {#const DPI_MODE_POOL_GET_FORCEGET #} = ModePoolGetForceget
-  toEnum {#const DPI_MODE_POOL_GET_TIMEDWAIT #} = ModePoolGetTimedwait
-  toEnum _ = error "Value invalid"
-  fromEnum ModePoolGetWait = {#const DPI_MODE_POOL_GET_WAIT #}
-  fromEnum ModePoolGetNowait = {#const DPI_MODE_POOL_GET_NOWAIT #}
-  fromEnum ModePoolGetForceget = {#const DPI_MODE_POOL_GET_FORCEGET #}
-  fromEnum ModePoolGetTimedwait = {#const DPI_MODE_POOL_GET_TIMEDWAIT #}
-#else
 {#enum PoolGetMode         as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data Purity
-  = PurityDefault | PurityNew | PuritySelf
-  deriving(Eq, Show)
-
-instance Enum Purity where
-  toEnum {#const DPI_PURITY_DEFAULT #} = PurityDefault
-  toEnum {#const DPI_PURITY_NEW #} = PurityNew
-  toEnum {#const DPI_PURITY_SELF #} = PuritySelf
-  toEnum _ = error "Value invalid"
-  fromEnum PurityDefault = {#const DPI_PURITY_DEFAULT #}
-  fromEnum PurityNew = {#const DPI_PURITY_NEW #}
-  fromEnum PuritySelf = {#const DPI_PURITY_SELF #}
-#else
 {#enum Purity              as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data ShutdownMode
-  = ModeShutdownDefault | ModeShutdownTransactional | ModeShutdownTransactionalLocal
-  | ModeShutdownImmediate | ModeShutdownAbort | ModeShutdownFinal
-  deriving(Eq, Show)
-
-instance Enum ShutdownMode where
-  toEnum {#const DPI_MODE_SHUTDOWN_DEFAULT #} = ModeShutdownDefault
-  toEnum {#const DPI_MODE_SHUTDOWN_TRANSACTIONAL #} = ModeShutdownTransactional
-  toEnum {#const DPI_MODE_SHUTDOWN_TRANSACTIONAL_LOCAL #} = ModeShutdownTransactionalLocal
-  toEnum {#const DPI_MODE_SHUTDOWN_IMMEDIATE #} = ModeShutdownImmediate
-  toEnum {#const DPI_MODE_SHUTDOWN_ABORT #} = ModeShutdownAbort
-  toEnum {#const DPI_MODE_SHUTDOWN_FINAL #} = ModeShutdownFinal
-  toEnum _ = error "Value invalid"
-  fromEnum ModeShutdownDefault = {#const DPI_MODE_SHUTDOWN_DEFAULT #}
-  fromEnum ModeShutdownTransactional = {#const DPI_MODE_SHUTDOWN_TRANSACTIONAL #}
-  fromEnum ModeShutdownTransactionalLocal = {#const DPI_MODE_SHUTDOWN_TRANSACTIONAL_LOCAL #}
-  fromEnum ModeShutdownImmediate = {#const DPI_MODE_SHUTDOWN_IMMEDIATE #}
-  fromEnum ModeShutdownAbort = {#const DPI_MODE_SHUTDOWN_ABORT #}
-  fromEnum ModeShutdownFinal = {#const DPI_MODE_SHUTDOWN_FINAL #}
-#else
 {#enum ShutdownMode        as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data StartupMode
-  = ModeStartupDefault | ModeStartupForce | ModeStartupRestrict
-  deriving(Eq, Show)
-
-instance Enum StartupMode where
-  toEnum {#const DPI_MODE_STARTUP_DEFAULT #} = ModeStartupDefault
-  toEnum {#const DPI_MODE_STARTUP_FORCE #} = ModeStartupForce
-  toEnum {#const DPI_MODE_STARTUP_RESTRICT #} = ModeStartupRestrict
-  toEnum _ = error "Value invalid"
-  fromEnum ModeStartupDefault = {#const DPI_MODE_STARTUP_DEFAULT #}
-  fromEnum ModeStartupForce = {#const DPI_MODE_STARTUP_FORCE #}
-  fromEnum ModeStartupRestrict = {#const DPI_MODE_STARTUP_RESTRICT #}
-#else
 {#enum StartupMode         as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data StatementType
-  = StmtTypeUnknown | StmtTypeSelect | StmtTypeUpdate | StmtTypeDelete
-  | StmtTypeInsert | StmtTypeCreate | StmtTypeDrop | StmtTypeAlter
-  | StmtTypeBegin | StmtTypeDeclare | StmtTypeCall | StmtTypeExplainPlan
-  | StmtTypeMerge | StmtTypeRollback | StmtTypeCommit
-  deriving(Eq, Show)
-
-instance Enum StatementType where
-  toEnum {#const DPI_STMT_TYPE_UNKNOWN #} = StmtTypeUnknown
-  toEnum {#const DPI_STMT_TYPE_SELECT #} = StmtTypeSelect
-  toEnum {#const DPI_STMT_TYPE_UPDATE #} = StmtTypeUpdate
-  toEnum {#const DPI_STMT_TYPE_DELETE #} = StmtTypeDelete
-  toEnum {#const DPI_STMT_TYPE_INSERT #} = StmtTypeInsert
-  toEnum {#const DPI_STMT_TYPE_CREATE #} = StmtTypeCreate
-  toEnum {#const DPI_STMT_TYPE_DROP #} = StmtTypeDrop
-  toEnum {#const DPI_STMT_TYPE_ALTER #} = StmtTypeAlter
-  toEnum {#const DPI_STMT_TYPE_BEGIN #} = StmtTypeBegin
-  toEnum {#const DPI_STMT_TYPE_DECLARE #} = StmtTypeDeclare
-  toEnum {#const DPI_STMT_TYPE_CALL #} = StmtTypeCall
-  toEnum {#const DPI_STMT_TYPE_EXPLAIN_PLAN #} = StmtTypeExplainPlan
-  toEnum {#const DPI_STMT_TYPE_MERGE #} = StmtTypeMerge
-  toEnum {#const DPI_STMT_TYPE_ROLLBACK #} = StmtTypeRollback
-  toEnum {#const DPI_STMT_TYPE_COMMIT #} = StmtTypeCommit
-  toEnum _ = error "Value invalid"
-  fromEnum StmtTypeUnknown = {#const DPI_STMT_TYPE_UNKNOWN #}
-  fromEnum StmtTypeSelect = {#const DPI_STMT_TYPE_SELECT #}
-  fromEnum StmtTypeUpdate = {#const DPI_STMT_TYPE_UPDATE #}
-  fromEnum StmtTypeDelete = {#const DPI_STMT_TYPE_DELETE #}
-  fromEnum StmtTypeInsert = {#const DPI_STMT_TYPE_INSERT #}
-  fromEnum StmtTypeCreate = {#const DPI_STMT_TYPE_CREATE #}
-  fromEnum StmtTypeDrop = {#const DPI_STMT_TYPE_DROP #}
-  fromEnum StmtTypeAlter = {#const DPI_STMT_TYPE_ALTER #}
-  fromEnum StmtTypeBegin = {#const DPI_STMT_TYPE_BEGIN #}
-  fromEnum StmtTypeDeclare = {#const DPI_STMT_TYPE_DECLARE #}
-  fromEnum StmtTypeCall = {#const DPI_STMT_TYPE_CALL #}
-  fromEnum StmtTypeExplainPlan = {#const DPI_STMT_TYPE_EXPLAIN_PLAN #}
-  fromEnum StmtTypeMerge = {#const DPI_STMT_TYPE_MERGE #}
-  fromEnum StmtTypeRollback = {#const DPI_STMT_TYPE_ROLLBACK #}
-  fromEnum StmtTypeCommit = {#const DPI_STMT_TYPE_COMMIT #}
-#else
 {#enum StatementType       as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
-data SubscrGroupingClass = SubscrGroupingClassTime deriving (Eq, Show)
-instance Enum SubscrGroupingClass where
-  toEnum {#const DPI_SUBSCR_GROUPING_CLASS_TIME #} = SubscrGroupingClassTime
-  toEnum _ = error "Value invalid"
-  fromEnum _ = {#const DPI_SUBSCR_GROUPING_CLASS_TIME #}
-
-data SubscrGroupingType
-  = SubscrGroupingTypeSummary
-  | SubscrGroupingTypeLast
-  deriving (Eq, Show)
-
-instance Enum SubscrGroupingType where
-  toEnum {#const DPI_SUBSCR_GROUPING_TYPE_SUMMARY #} = SubscrGroupingTypeSummary
-  toEnum {#const DPI_SUBSCR_GROUPING_TYPE_LAST    #} = SubscrGroupingTypeLast
-  toEnum _ = error "Value invalid"
-  fromEnum SubscrGroupingTypeSummary = {#const DPI_SUBSCR_GROUPING_TYPE_SUMMARY #}
-  fromEnum SubscrGroupingTypeLast    = {#const DPI_SUBSCR_GROUPING_TYPE_LAST    #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data SubscrNamespace
-  = SubscrNamespaceAq | SubscrNamespaceDbchange
-  deriving(Eq, Show)
-
-instance Enum SubscrNamespace where
-  toEnum {#const DPI_SUBSCR_NAMESPACE_AQ #} = SubscrNamespaceAq
-  toEnum {#const DPI_SUBSCR_NAMESPACE_DBCHANGE #} = SubscrNamespaceDbchange
-  toEnum _ = error "Value invalid"
-  fromEnum SubscrNamespaceAq = {#const DPI_SUBSCR_NAMESPACE_AQ #}
-  fromEnum SubscrNamespaceDbchange = {#const DPI_SUBSCR_NAMESPACE_DBCHANGE #}
-#else
 {#enum SubscrNamespace     as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data SubscrProtocol
-  = SubscrProtoCallback | SubscrProtoMail | SubscrProtoPlsql | SubscrProtoHttp
-  deriving(Eq, Show)
-
-instance Enum SubscrProtocol where
-  toEnum {#const DPI_SUBSCR_PROTO_CALLBACK #} = SubscrProtoCallback
-  toEnum {#const DPI_SUBSCR_PROTO_MAIL #} = SubscrProtoMail
-  toEnum {#const DPI_SUBSCR_PROTO_PLSQL #} = SubscrProtoPlsql
-  toEnum {#const DPI_SUBSCR_PROTO_HTTP #} = SubscrProtoHttp
-  toEnum _ = error "Value invalid"
-  fromEnum SubscrProtoCallback = {#const DPI_SUBSCR_PROTO_CALLBACK #}
-  fromEnum SubscrProtoMail = {#const DPI_SUBSCR_PROTO_MAIL #}
-  fromEnum SubscrProtoPlsql = {#const DPI_SUBSCR_PROTO_PLSQL #}
-  fromEnum SubscrProtoHttp = {#const DPI_SUBSCR_PROTO_HTTP #}
-#else
 {#enum SubscrProtocol      as ^ {underscoreToCase} deriving (Eq, Show) #}
-#endif
-
-#if DPI_MAJOR_VERSION >= 3
-data SubscrQOS
-  = SubscrQosReliable | SubscrQosDeregNfy | SubscrQosRowids
-  | SubscrQosQuery | SubscrQosBestEffort
-  deriving(Eq, Show)
-
-instance Enum SubscrQOS where
-  toEnum {#const DPI_SUBSCR_QOS_RELIABLE #} = SubscrQosReliable
-  toEnum {#const DPI_SUBSCR_QOS_DEREG_NFY #} = SubscrQosDeregNfy
-  toEnum {#const DPI_SUBSCR_QOS_ROWIDS #} = SubscrQosRowids
-  toEnum {#const DPI_SUBSCR_QOS_QUERY #} = SubscrQosQuery
-  toEnum {#const DPI_SUBSCR_QOS_BEST_EFFORT #} = SubscrQosBestEffort
-  toEnum _ = error "Value invalid"
-  fromEnum SubscrQosReliable = {#const DPI_SUBSCR_QOS_RELIABLE #}
-  fromEnum SubscrQosDeregNfy = {#const DPI_SUBSCR_QOS_DEREG_NFY #}
-  fromEnum SubscrQosRowids = {#const DPI_SUBSCR_QOS_ROWIDS #}
-  fromEnum SubscrQosQuery = {#const DPI_SUBSCR_QOS_QUERY #}
-  fromEnum SubscrQosBestEffort = {#const DPI_SUBSCR_QOS_BEST_EFFORT #}
-#else
 {#enum SubscrQOS           as ^ {underscoreToCase} deriving (Eq, Show) #}
+{#enum Visibility          as ^ {underscoreToCase} deriving (Eq, Show) #}
 #endif
 
-#if DPI_MAJOR_VERSION >= 3
-data Visibility = VisibilityImmediate | VisibilityOnCommit
-                deriving(Eq, Show)
-
-instance Enum Visibility where
-  toEnum {#const DPI_VISIBILITY_IMMEDIATE #} = VisibilityImmediate
-  toEnum {#const DPI_VISIBILITY_ON_COMMIT #} = VisibilityOnCommit
-  toEnum _ = error "Value invalid"
-  fromEnum VisibilityImmediate = {#const DPI_VISIBILITY_IMMEDIATE #}
-  fromEnum VisibilityOnCommit = {#const DPI_VISIBILITY_ON_COMMIT #}
-#else
-{#enum Visibility          as ^ {underscoreToCase} deriving (Eq, Show) #}
+#if DPI_VERSION_NUMBER >= 20400
+{#enum define SubscrGroupingClass 
+  { DPI_SUBSCR_GROUPING_CLASS_TIME as SubscrGroupingClassTime
+  } deriving (Eq, Show) #}
+{#enum define SubscrGroupingType  
+  { DPI_SUBSCR_GROUPING_TYPE_SUMMARY as SubscrGroupingTypeSummary
+  , DPI_SUBSCR_GROUPING_TYPE_LAST    as SubscrGroupingTypeLast
+  } deriving (Eq, Show) #}
 #endif
 
 -- Handler
@@ -968,7 +582,7 @@ newData d = do
   return (tp, ot, pd)
   where
     {-# INLINE go #-}
-    go (DataNull          t) = (t,                    OracleTypeNone         )
+    go (DataNull          t) = (t,                    OracleTypeBoolean      )
     go (DataBFile         _) = (NativeTypeLob,        OracleTypeBfile        )
     go (DataBoolean       _) = (NativeTypeBoolean,    OracleTypeBoolean      )
     go (DataBlob          _) = (NativeTypeLob,        OracleTypeBlob         )
@@ -1008,7 +622,7 @@ instance Storable Data where
   sizeOf    _ = {#sizeof  Data #}
   alignment _ = {#alignof Data #}
   poke      p' (Data f) = do
-    f NativeTypeDouble OracleTypeNone >>= go p'
+    f NativeTypeDouble OracleTypeBoolean >>= go p'
     where
       sLob p1 v1 = {#set Data -> value.asLOB        #} p1 v1
       sByt p2 Data_Bytes{..} = do
@@ -1304,7 +918,7 @@ data Data_PoolCreateParams  = Data_PoolCreateParams
   , externalAuth       :: !CInt
   , getMode            :: !PoolGetMode
   , outPoolName        :: !CStringLen
-#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+#if DPI_VERSION_NUMBER >= 20400
   , timeout            :: !CUInt
   , waitTimeout        :: !CUInt
   , maxLifetimeSession :: !CUInt
@@ -1338,7 +952,7 @@ instance Storable Data_PoolCreateParams where
     outPoolName'      <-        {#get PoolCreateParams -> outPoolName        #} p
     outPoolNameLength <-        {#get PoolCreateParams -> outPoolNameLength  #} p
     let outPoolName    = (outPoolName', fromIntegral outPoolNameLength)
-#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+#if DPI_VERSION_NUMBER >= 20400
     timeout           <-        {#get PoolCreateParams -> timeout            #} p
     waitTimeout       <-        {#get PoolCreateParams -> waitTimeout        #} p
     maxLifetimeSession<-        {#get PoolCreateParams -> maxLifetimeSession #} p
@@ -1461,7 +1075,7 @@ data Data_SubscrCreateParams = Data_SubscrCreateParams
   , callback            :: !(FunPtr (Ptr () -> PtrSubscrMessage -> IO ()))
   , callbackContext     :: !(Ptr ())
   , recipientName       :: !CStringLen
-#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+#if DPI_VERSION_NUMBER >= 20400
   , ipAddress           :: !CStringLen
   , groupingClass       :: !SubscrGroupingClass
   , groupingValue       :: !CUInt
@@ -1477,7 +1091,7 @@ instance Storable Data_SubscrCreateParams where
     subscrNamespace     <- te <$> {#get SubscrCreateParams -> subscrNamespace     #} p
     protocol            <- te <$> {#get SubscrCreateParams -> protocol            #} p
     qos                 <- te <$> {#get SubscrCreateParams -> qos                 #} p
-    operations          <-        {#get SubscrCreateParams -> operations          #} p
+    operations          <- te <$> {#get SubscrCreateParams -> operations          #} p
     portNumber          <-        {#get SubscrCreateParams -> portNumber          #} p
     timeout             <-        {#get SubscrCreateParams -> timeout             #} p
     name'               <-        {#get SubscrCreateParams -> name                #} p
@@ -1488,7 +1102,7 @@ instance Storable Data_SubscrCreateParams where
     recipientNameLength <-        {#get SubscrCreateParams -> recipientNameLength #} p
     let name          = (name',          fromIntegral nameLength)
         recipientName = (recipientName', fromIntegral recipientNameLength)
-#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+#if DPI_VERSION_NUMBER >= 20400
     ipAddress'          <-        {#get SubscrCreateParams -> ipAddress           #} p
     ipAddressLength     <-        {#get SubscrCreateParams -> ipAddressLength     #} p
     groupingClass       <- te <$> {#get SubscrCreateParams -> groupingClass       #} p
@@ -1508,7 +1122,7 @@ data Data_SubscrMessage = Data_SubscrMessage
   , errorInfo    :: !PtrErrorInfo
   , txId         :: !(Ptr ())
   , txIdLength   :: !CUInt
-#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+#if DPI_VERSION_NUMBER >= 20400
   , registered   :: !CInt
   , queueName    :: !CStringLen
   , consumerName :: !CStringLen
@@ -1531,7 +1145,7 @@ instance Storable Data_SubscrMessage where
     txId               <-        {#get SubscrMessage -> txId               #} p
     txIdLength         <-        {#get SubscrMessage -> txIdLength         #} p
     let dbName         = (dbName', fromIntegral dbNameLength)
-#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+#if DPI_VERSION_NUMBER >= 20400
     registered         <-        {#get SubscrMessage -> registered         #} p
     queueName'         <-        {#get SubscrMessage -> queueName          #} p
     queueNameLength    <-        {#get SubscrMessage -> queueNameLength    #} p
@@ -1618,6 +1232,12 @@ instance Storable Data_VersionInfo where
     fullVersionNum <- {#get VersionInfo -> fullVersionNum #} p
     return Data_VersionInfo {..}
 
+#if DPI_MAJOR_VERSION >= 3 
+version_3 = True
+#else
+version_3 = False
+#endif
+
 -- Context
 {-# INLINE libContextCreate                 #-}
 {-# INLINE libContextDestroy                #-}
@@ -1659,7 +1279,6 @@ libContextGetError               = {#call Context_getError               #}
 {-# INLINE libConnNewDeqOptions       #-}
 {-# INLINE libConnNewEnqOptions       #-}
 {-# INLINE libConnNewMsgProps         #-}
-{-# INLINE libConnNewSubscription     #-}
 {-# INLINE libConnNewTempLob          #-}
 {-# INLINE libConnNewVar              #-}
 {-# INLINE libConnPing                #-}
@@ -1703,7 +1322,8 @@ libConnNewDeqOptions       = {#call Conn_newDeqOptions       #}
 libConnNewEnqOptions       = {#call Conn_newEnqOptions       #}
 libConnNewMsgProps         = {#call Conn_newMsgProps         #}
 #if DPI_MAJOR_VERSION >= 3
-libConnNewSubscription     = {#call dpiConn_subscribe        #}
+libConnNewSubscription :: Ptr DPI_Conn -> Ptr Data_SubscrCreateParams -> Ptr (Ptr DPI_Subscr) -> Ptr Int -> IO CInt
+libConnNewSubscription     = error "dpiConn_newSubscription deprecated in 3.x"
 #else
 libConnNewSubscription     = {#call Conn_newSubscription     #}
 #endif
@@ -1725,7 +1345,7 @@ libConnSetModule           = {#call Conn_setModule           #}
 libConnSetStmtCacheSize    = {#call Conn_setStmtCacheSize    #}
 libConnShutdownDatabase    = {#call Conn_shutdownDatabase    #}
 libConnStartupDatabase     = {#call Conn_startupDatabase     #}
-#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+#if DPI_VERSION_NUMBER >= 20400
 libConnSubscribe           = {#call Conn_subscribe           #}
 libConnUnsubscribe         = {#call Conn_unsubscribe         #}
 #else
@@ -2007,7 +1627,7 @@ libPoolSetGetMode            = {#call Pool_setGetMode            #}
 libPoolSetMaxLifetimeSession = {#call Pool_setMaxLifetimeSession #}
 libPoolSetStmtCacheSize      = {#call Pool_setStmtCacheSize      #}
 libPoolSetTimeout            = {#call Pool_setTimeout            #}
-#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+#if DPI_VERSION_NUMBER >= 20400
 libPoolGetWaitTimeout        = {#call Pool_getWaitTimeout       #}
 libPoolSetWaitTimeout        = {#call Pool_setWaitTimeout       #}
 #else
@@ -2088,7 +1708,7 @@ libRowidRelease        = {#call Rowid_release        #}
 {-# INLINE libSubscrRelease     #-}
 libSubscrAddRef      = {#call Subscr_addRef       #}
 #if DPI_MAJOR_VERSION >= 3
-libSubscrClose       = {#call dpiConn_unsubscribe #}
+libSubscrClose       = error "dpiSubscr_close deprecated in 3.x"
 #else
 libSubscrClose       = {#call Subscr_close        #}
 #endif
@@ -2099,7 +1719,6 @@ libSubscrRelease     = {#call Subscr_release      #}
 -- Var
 {-# INLINE libVarAddRef                #-}
 {-# INLINE libVarCopyData              #-}
-{-# INLINE libVarGetData               #-}
 {-# INLINE libVarGetNumElementsInArray #-}
 {-# INLINE libVarGetSizeInBytes        #-}
 {-# INLINE libVarRelease               #-}
@@ -2111,11 +1730,6 @@ libSubscrRelease     = {#call Subscr_release      #}
 {-# INLINE libVarSetNumElementsInArray #-}
 libVarAddRef                = {#call Var_addRef                #}
 libVarCopyData              = {#call Var_copyData              #}
-#if DPI_MAJOR_VERSION >= 3
-libVarGetData               = {#call dpiVar_getReturnedData    #}
-#else
-libVarGetData               = {#call Var_getData               #}
-#endif
 libVarGetNumElementsInArray = {#call Var_getNumElementsInArray #}
 libVarGetSizeInBytes        = {#call Var_getSizeInBytes        #}
 libVarRelease               = {#call Var_release               #}
@@ -2125,10 +1739,12 @@ libVarSetFromObject         = {#call Var_setFromObject         #}
 libVarSetFromRowid          = {#call Var_setFromRowid          #}
 libVarSetFromStmt           = {#call Var_setFromStmt           #}
 libVarSetNumElementsInArray = {#call Var_setNumElementsInArray #}
-#if DPI_MAJOR_VERSION >= 2 && DPI_MINOR_VERSION >= 4
+#if DPI_VERSION_NUMBER >= 20400
 libVarGetReturnedData       = {#call Var_getReturnedData       #}
-use2_4_0                    = True
+#endif
+#if DPI_MAJOR_VERSION < 3
+libVarGetData               = {#call Var_getData               #}
 #else
-libVarGetReturnedData       = error "No implement until 2.4.0"
-use2_4_0                    = False
+libVarGetData :: Ptr DPI_Var -> Ptr CUInt -> Ptr PtrData -> IO CInt
+libVarGetData               = error "dpiVar_getData deprecated in 3.x"
 #endif

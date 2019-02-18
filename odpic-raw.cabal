@@ -4,10 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: a96a1c9de0a96dcc5eb8ba38e5acc5612402378c56e71e233a0941a07a435259
+-- hash: 5b49476b39ea34b9cd26bd0ee23504f8ae8493133de2028addd5f51e2f483849
 
 name:           odpic-raw
-version:        0.3.1
+version:        0.4.0
 synopsis:       Oracle Database Bindings
 description:    A low-level client library for the Oracle database, implemented as bindings to the C ODPI API.
 category:       Database, Oracle, ODPI-C, FFI, Raw

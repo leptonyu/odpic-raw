@@ -5,5 +5,3 @@ extra-include-dirs:
   - /usr/local/include
 extra-lib-dirs:
   - /usr/local/lib
-nix:
-  packages: [odpic]

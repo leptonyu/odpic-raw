@@ -1,5 +1,5 @@
 name: odpic-raw
-version: 0.3.1
+version: 0.4.0
 synopsis: Oracle Database Bindings
 description: A low-level client library for the Oracle database, implemented as bindings to the C ODPI API.
 maintainer: Daniel YU <leptonyu@gmail.com>

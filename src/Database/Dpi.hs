@@ -1553,7 +1553,7 @@ copyVar (_,p) toPos (_,from) fromPos
 {-# INLINE getVarData #-}
 getVarData :: PtrVar -> IO [Data]
 getVarData pc =
-  if use2_4_0
+  if version_3
     then getVarReturnedData pc 0
     else old pc
   where
@@ -1983,17 +1983,18 @@ getMsgPropsState (cxt,p) = libMsgPropsGetState p & outValue cxt peekEnum
 -- | Returns a reference to a subscription which is used for requesting notifications of changes on tables or queries
 -- that are made in the database. The reference should be released as soon as it is no longer needed.
 {-# INLINE newSubscr #-}
+{-# DEPRECATED newSubscr "deprecated in 3.x, use subscribe in stead" #-}
 newSubscr
   :: PtrConn
   -> (Data_SubscrCreateParams -> Data_SubscrCreateParams)
   -> IO PtrSubscr
 newSubscr (cxt,p)  hcmp
-  = libConnNewSubscription p
-    & inPtr (\c -> libContextInitSubscrCreateParams cxt c >> peek c >>= poke c . hcmp)
-    & out2Value cxt (go cxt)
-    where
-      {-# INLINE go #-}
-      go c (p',_) = (c,) <$> peek p'
+  = libConnNewSubscription p 
+  & inPtr (\c -> libContextInitSubscrCreateParams cxt c >> peek c >>= poke c . hcmp)
+  & out2Value cxt (go cxt)
+  where
+    {-# INLINE go #-}
+    go c (p',_) = (c,) <$> peek p'
 
 -- | Returns a reference to a subscription which is used for requesting notifications of events that take place in the database.
 -- Events that are supported are changes on tables or queries (continuous query notification)
@@ -2028,6 +2029,7 @@ subscrAddRef = runBool libSubscrAddRef
 -- | Closes the subscription now, rather than when the last reference is released.
 -- This deregisters it so that notifications will no longer be sent.
 {-# INLINE closeSubscr #-}
+{-# DEPRECATED closeSubscr "deprecated in 3.x, use unsubscribe in stead" #-}
 closeSubscr :: PtrSubscr -> IO Bool
 closeSubscr = runBool libSubscrClose
 

@@ -30,6 +30,7 @@ pgdata
 report.html
 allegro-raw
 persistent-oracle
-odpi/
+odpi
+odpi-*
 
 # End of https://www.gitignore.io/api/haskell
