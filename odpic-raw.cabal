@@ -4,10 +4,10 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: f8ea175efdb16c57a8dc4c720423db23457456440563c3ff3ab06b94b6d2b746
+-- hash: 81672f398fe0c514abb754b59070ec5207eb895ac38bf6c6ee398b47c79279f3
 
 name:           odpic-raw
-version:        0.4.0
+version:        0.4.1
 synopsis:       Oracle Database Bindings
 description:    A low-level client library for the Oracle database, implemented as bindings to the C ODPI API.
 category:       Database, Oracle, ODPI-C, FFI, Raw
@@ -69,8 +69,7 @@ library
       Database.Dpi.Util
   hs-source-dirs:
       src
-  default-extensions: AutoDeriveTypeable BangPatterns BinaryLiterals ConstraintKinds DataKinds DefaultSignatures DeriveDataTypeable DeriveFoldable DeriveFunctor DeriveGeneric DeriveTraversable DuplicateRecordFields DoAndIfThenElse EmptyDataDecls ExistentialQuantification FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving InstanceSigs KindSignatures LambdaCase MonadFailDesugaring MultiParamTypeClasses MultiWayIf NamedFieldPuns OverloadedStrings PartialTypeSignatures PatternGuards PolyKinds RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TupleSections TypeApplications TypeFamilies TypeOperators TypeSynonymInstances ViewPatterns
-  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fno-warn-orphans -fno-warn-missing-signatures
+  ghc-options: -Wall
   include-dirs:
       include
   c-sources:
@@ -120,18 +119,10 @@ test-suite odpic-raw-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Database.Dpi
-      Database.Dpi.Field
-      Database.Dpi.Internal
-      Database.Dpi.Prelude
-      Database.Dpi.Sql
-      Database.Dpi.Util
       Paths_odpic_raw
   hs-source-dirs:
-      src
       test
-  default-extensions: AutoDeriveTypeable BangPatterns BinaryLiterals ConstraintKinds DataKinds DefaultSignatures DeriveDataTypeable DeriveFoldable DeriveFunctor DeriveGeneric DeriveTraversable DuplicateRecordFields DoAndIfThenElse EmptyDataDecls ExistentialQuantification FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving InstanceSigs KindSignatures LambdaCase MonadFailDesugaring MultiParamTypeClasses MultiWayIf NamedFieldPuns OverloadedStrings PartialTypeSignatures PatternGuards PolyKinds RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TupleSections TypeApplications TypeFamilies TypeOperators TypeSynonymInstances ViewPatterns
-  ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fno-warn-orphans -fno-warn-missing-signatures
+  ghc-options: -Wall
   build-tools:
       c2hs
   build-depends:

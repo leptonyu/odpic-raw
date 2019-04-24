@@ -1,3 +1,5 @@
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TupleSections   #-}
 {-|
 
 Module:      Database.Dpi
@@ -1989,7 +1991,7 @@ newSubscr
   -> (Data_SubscrCreateParams -> Data_SubscrCreateParams)
   -> IO PtrSubscr
 newSubscr (cxt,p)  hcmp
-  = libConnNewSubscription p 
+  = libConnNewSubscription p
   & inPtr (\c -> libContextInitSubscrCreateParams cxt c >> peek c >>= poke c . hcmp)
   & out2Value cxt (go cxt)
   where

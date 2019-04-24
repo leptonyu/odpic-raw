@@ -1,3 +1,5 @@
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Database.Dpi.Sql(
     getLanguage
   , setupLanguage

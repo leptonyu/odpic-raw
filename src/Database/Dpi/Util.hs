@@ -1,5 +1,12 @@
-{-# LANGUAGE UndecidableInstances #-}
-
+{-# LANGUAGE BangPatterns           #-}
+{-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses  #-}
+{-# LANGUAGE TupleSections          #-}
+{-# LANGUAGE TypeSynonymInstances   #-}
+{-# LANGUAGE UndecidableInstances   #-}
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Database.Dpi.Util where
 
 import           Database.Dpi.Internal

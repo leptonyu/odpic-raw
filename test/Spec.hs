@@ -10,7 +10,7 @@ import qualified Data.ByteString.Char8 as BC
 import           Data.Monoid           ((<>))
 import           Data.Scientific
 import           Data.Time
-import System.Environment
+import           System.Environment
 
 import           Database.Dpi
 import           Database.Dpi.Field
@@ -19,7 +19,7 @@ import           Database.Dpi.Sql
 ioConf :: IO (Maybe OracleConfig)
 ioConf = do
   envs <- getEnvironment
-  return $ do 
+  return $ do
     username <- lookup "DB_USER" envs
     password <- lookup "DB_PASS" envs
     url      <- lookup "DB_URL"  envs

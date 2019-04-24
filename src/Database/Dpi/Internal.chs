@@ -1,3 +1,7 @@
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Database.Dpi.Internal where
 
 import           Database.Dpi.Prelude
