@@ -1,14 +1,12 @@
 # odpic-raw
 
-[![Hackage](https://img.shields.io/badge/hackage-v0.4.0-orange.svg)](https://hackage.haskell.org/package/odpic-raw)
+[![Hackage](https://img.shields.io/badge/hackage/v/odpic-raw.svg)](https://hackage.haskell.org/package/odpic-raw)
 
-
-Haskell raw bindings to [Oracle ODPI-C Library](https://github.com/oracle/odpi)
-
+Haskell raw bindings to [Oracle ODPI-C Library](https://github.com/oracle/odpi).
 
 Requirements:
 
-  * [libodpic 2.4.x/3.x](https://github.com/oracle/odpi/releases) (dpi.h should installed in /usr/local/include)
+  * It contains the ODPI-C source, so you don't need to install it manually.
   * [Oracle Instant Client Basic or Basic Light package](http://www.oracle.com/technetwork/database/features/instant-client/index-097480.html)
   * GHC 8.2.2 or greater
 
@@ -18,7 +16,6 @@ Installation:
 ```
 stack build odpic-raw
 ```
-
 
 Use environment [`DPI_DEBUG_LEVEL`](https://oracle.github.io/odpi/doc/user_guide/debugging.html) to set DPI debug level.
 
@@ -30,8 +27,10 @@ Or use `setupLanguage` to set  `NLS_LANG` automatically.
 
 Test:
 
-edit [Spec.hs](https://github.com/leptonyu/odpic-raw/blob/master/test/Spec.hs), set `username`, `password`, `constr` for test oracle db
 ```
+export DB_USER=username
+export DB_PASS=password
+export DB_URL=localhost/dbname
 stack test
 ```
 
