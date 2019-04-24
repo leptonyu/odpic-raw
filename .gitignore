@@ -32,5 +32,6 @@ allegro-raw
 persistent-oracle
 odpi
 odpi-*
+env.sh
 
 # End of https://www.gitignore.io/api/haskell

@@ -10,18 +10,27 @@ import qualified Data.ByteString.Char8 as BC
 import           Data.Monoid           ((<>))
 import           Data.Scientific
 import           Data.Time
+import System.Environment
 
 import           Database.Dpi
 import           Database.Dpi.Field
 import           Database.Dpi.Sql
 
-conf :: OracleConfig
-conf = defaultOracle "username" "password" "localhost:1521/dbname"
+ioConf :: IO (Maybe OracleConfig)
+ioConf = do
+  envs <- getEnvironment
+  return $ do 
+    username <- lookup "DB_USER" envs
+    password <- lookup "DB_PASS" envs
+    url      <- lookup "DB_URL"  envs
+    return $ defaultOracle (BC.pack username) (BC.pack password) (BC.pack url)
 
 main :: IO ()
 main = do
-  setupLanguage conf
-  test
+  c <- ioConf
+  case c of
+    Just con -> setupLanguage con >> test con
+    _        -> putStrLn "Ignore test"
 
 prepareTable :: PtrConn -> IO ()
 prepareTable conn = do
@@ -53,8 +62,8 @@ instance FromDataFields S where
     Just avg <- readDataField dfm "AVG"
     return S{..}
 
-test :: IO ()
-test = hspec $ do
+test :: OracleConfig -> IO ()
+test conf = hspec $ do
   describe "Database.Dpi" $ do
 
     it "Context Test" $ do
@@ -144,7 +153,7 @@ test = hspec $ do
                       _ <- fetch st
                       mapM (getQueryValue st) [1..r] >>= print
           _ <- sequence $ take 2 $ repeat f
-          (queryByPage conn "SELECT DBTIMEZONE,CURRENT_DATE,CURRENT_TIMESTAMP,SYSDATE,SYSTIMESTAMP FROM dual" [] (0,1) :: IO [String]) >>= print
+          (queryByPage conn "SELECT DBTIMEZONE,sessiontimezone,CURRENT_DATE,CURRENT_TIMESTAMP,SYSDATE,SYSTIMESTAMP FROM dual" [] (0,1) :: IO [String]) >>= print
 
           prepareTable conn
           let insert = "INSERT INTO TEST_T_NAME(ID,NAME) VALUES(:id,:name)"

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: a498a07dafa1456cbc0c8237c2f74de0a0a7bb61f43af54f2e0c2d8d49431348
+-- hash: 0548807f7d10917dc1a690df57f272f0b549bf046236ff6fccd1e6ad434bfbb4
 
 name:           odpic-raw
 version:        0.4.0
@@ -107,7 +107,7 @@ library
   build-tools:
       c2hs
   build-depends:
-      base >=4.7 && <5
+      base >=4.9 && <5
     , binary
     , bytestring
     , conduit

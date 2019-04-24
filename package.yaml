@@ -13,7 +13,7 @@ extra-source-files:
 - include/*.c
 
 dependencies:
-  - base >= 4.7 && < 5
+  - base >= 4.9 && < 5
   - bytestring
   - resourcet
   - conduit
