@@ -1,6 +1,7 @@
 # odpic-raw
 
-[![Hackage](https://img.shields.io/badge/hackage/v/odpic-raw.svg)](https://hackage.haskell.org/package/odpic-raw)
+[![Hackage](https://img.shields.io/hackage/v/odpic-raw.svg)](https://hackage.haskell.org/package/odpic-raw)
+[![Build Status](https://travis-ci.org/leptonyu/odpic-raw.svg?branch=master)](https://travis-ci.org/leptonyu/odpic-raw)
 
 Haskell raw bindings to [Oracle ODPI-C Library](https://github.com/oracle/odpi).
 
