@@ -11,7 +11,6 @@ Requirements:
   * [Oracle Instant Client Basic or Basic Light package](http://www.oracle.com/technetwork/database/features/instant-client/index-097480.html)
   * GHC 8.* or greater
 
-
 Installation:
 
 ```
@@ -33,19 +32,6 @@ export DB_USER=username
 export DB_PASS=password
 export DB_URL=localhost/dbname
 stack test
-```
-
-Stack dependencies :
-
-this project is not in stackage yet, please add `extra-deps` in `stack.yaml` configuration.
-
-```
-# for lts-11.x, lts-12.x, lts-13.x
-extra-deps:
-  - odpic-raw-0.4.0
-# for lts-10.x
-extra-deps:
-  - odpic-raw-0.1.11
 ```
 
 More Documents:
