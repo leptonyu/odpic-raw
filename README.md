@@ -7,7 +7,7 @@ Haskell raw bindings to [Oracle ODPI-C Library](https://github.com/oracle/odpi).
 
 Requirements:
 
-  * It contains the ODPI-C source, so you don't need to install it manually.
+  * odpic-raw 5.* contains the ODPI-C source, so you don't need to install it manually.
   * [Oracle Instant Client Basic or Basic Light package](http://www.oracle.com/technetwork/database/features/instant-client/index-097480.html)
   * GHC 8.* or greater
 
