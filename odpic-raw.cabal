@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 5b49476b39ea34b9cd26bd0ee23504f8ae8493133de2028addd5f51e2f483849
+-- hash: a498a07dafa1456cbc0c8237c2f74de0a0a7bb61f43af54f2e0c2d8d49431348
 
 name:           odpic-raw
 version:        0.4.0
@@ -19,6 +19,40 @@ license-file:   LICENSE
 build-type:     Simple
 extra-source-files:
     README.md
+    include/LICENSE
+    include/dpi.h
+    include/dpiErrorMessages.h
+    include/dpiImpl.h
+    include/dpiConn.c
+    include/dpiContext.c
+    include/dpiData.c
+    include/dpiDebug.c
+    include/dpiDeqOptions.c
+    include/dpiEnqOptions.c
+    include/dpiEnv.c
+    include/dpiError.c
+    include/dpiGen.c
+    include/dpiGlobal.c
+    include/dpiHandleList.c
+    include/dpiHandlePool.c
+    include/dpiLob.c
+    include/dpiMsgProps.c
+    include/dpiObject.c
+    include/dpiObjectAttr.c
+    include/dpiObjectType.c
+    include/dpiOci.c
+    include/dpiOracleType.c
+    include/dpiPool.c
+    include/dpiRowid.c
+    include/dpiSodaColl.c
+    include/dpiSodaCollCursor.c
+    include/dpiSodaDb.c
+    include/dpiSodaDoc.c
+    include/dpiSodaDocCursor.c
+    include/dpiStmt.c
+    include/dpiSubscr.c
+    include/dpiUtils.c
+    include/dpiVar.c
 
 source-repository head
   type: git
@@ -37,8 +71,41 @@ library
       src
   default-extensions: AutoDeriveTypeable BangPatterns BinaryLiterals ConstraintKinds DataKinds DefaultSignatures DeriveDataTypeable DeriveFoldable DeriveFunctor DeriveGeneric DeriveTraversable DuplicateRecordFields DoAndIfThenElse EmptyDataDecls ExistentialQuantification FlexibleContexts FlexibleInstances FunctionalDependencies GADTs GeneralizedNewtypeDeriving InstanceSigs KindSignatures LambdaCase MonadFailDesugaring MultiParamTypeClasses MultiWayIf NamedFieldPuns OverloadedStrings PartialTypeSignatures PatternGuards PolyKinds RankNTypes RecordWildCards ScopedTypeVariables StandaloneDeriving TupleSections TypeApplications TypeFamilies TypeOperators TypeSynonymInstances ViewPatterns
   ghc-options: -Wall -Wcompat -Wincomplete-record-updates -Wincomplete-uni-patterns -Wredundant-constraints -fno-warn-orphans -fno-warn-missing-signatures
-  extra-libraries:
-      odpic
+  include-dirs:
+      include
+  c-sources:
+      include/dpiConn.c
+      include/dpiContext.c
+      include/dpiData.c
+      include/dpiDebug.c
+      include/dpiDeqOptions.c
+      include/dpiEnqOptions.c
+      include/dpiEnv.c
+      include/dpiError.c
+      include/dpiGen.c
+      include/dpiGlobal.c
+      include/dpiHandleList.c
+      include/dpiHandlePool.c
+      include/dpiLob.c
+      include/dpiMsgProps.c
+      include/dpiObject.c
+      include/dpiObjectAttr.c
+      include/dpiObjectType.c
+      include/dpiOci.c
+      include/dpiOracleType.c
+      include/dpiPool.c
+      include/dpiRowid.c
+      include/dpiSodaColl.c
+      include/dpiSodaCollCursor.c
+      include/dpiSodaDb.c
+      include/dpiSodaDoc.c
+      include/dpiSodaDocCursor.c
+      include/dpiStmt.c
+      include/dpiSubscr.c
+      include/dpiUtils.c
+      include/dpiVar.c
+  build-tools:
+      c2hs
   build-depends:
       base >=4.7 && <5
     , binary
@@ -47,8 +114,6 @@ library
     , resourcet
     , scientific
     , time
-  build-tools:
-      c2hs
   default-language: Haskell2010
 
 test-suite odpic-raw-test

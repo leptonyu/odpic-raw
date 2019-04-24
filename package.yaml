@@ -6,7 +6,11 @@ maintainer: Daniel YU <leptonyu@gmail.com>
 license: MIT
 github: leptonyu/odpic-raw
 category: Database, Oracle, ODPI-C, FFI, Raw
-extra-source-files: README.md
+extra-source-files: 
+- README.md
+- include/LICENSE
+- include/*.h
+- include/*.c
 
 dependencies:
   - base >= 4.7 && < 5
@@ -29,7 +33,11 @@ library:
     - Database.Dpi.Internal
     - Database.Dpi.Prelude
     - Database.Dpi.Util
-  extra-libraries: odpic
+  include-dirs: 
+  - include
+  c-sources:
+  - include/*.c
+  # extra-libraries: odpic
   build-tools: c2hs
 
 tests:
