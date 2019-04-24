@@ -37,16 +37,15 @@ library:
   - include
   c-sources:
   - include/*.c
-  # extra-libraries: odpic
   build-tools: c2hs
 
 tests:
   odpic-raw-test:
     source-dirs: test
     main: Spec.hs
+    build-tools: c2hs
     dependencies:
       - odpic-raw
-      - base
       - resourcet
       - conduit
       - bytestring
