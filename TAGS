@@ -1,0 +1,439 @@
+
+./Setup.hs,15
+main main1,2
+
+./test/Spec.hs,453
+ioConf ioConf18,19
+main main27,28
+prepareTable prepareTable34,35
+data IdName IdName44,45
+data IdName = IdNameIdName44,45
+  { key key45,46
+  , name name46,47
+  , time time47,48
+instance FromDataFields FromDataFields IdName50,51
+  fromDataFields fromDataFields51,52
+data S S57,58
+data S = S S57,58
+data S = S  { avg avg57,58
+instance FromDataFields FromDataFields S59,60
+  fromDataFields fromDataFields60,61
+test test64,65
+
+./src/Database/Dpi/Prelude.hs,184
+module Database.Dpi.PreludeDatabase.Dpi.Prelude0,1
+toMaybePtr toMaybePtr23,24
+ts ts27,28
+tsLen tsLen31,32
+fe fe35,36
+te te39,40
+ft ft43,44
+noImplement noImplement47,48
+
+./src/Database/Dpi/Sql.hs,274
+module Database.Dpi.Sql(Database.Dpi.Sql2,3
+getLanguage getLanguage26,27
+setupLanguage setupLanguage34,35
+type Name Name39,40
+type SqlParam SqlParam40,41
+execute execute43,44
+bindValue bindValue51,52
+queryAsRes queryAsRes57,58
+queryByPage queryByPage87,88
+
+./src/Database/Dpi/Field.hs,3703
+module Database.Dpi.Field(Database.Dpi.Field5,6
+data DataField DataField37,38
+data DataField = DataFieldDataField37,38
+  { info info38,39
+  , value value39,40
+class FromDataField FromDataField43,44
+  fromDataField fromDataField44,45
+isNullable isNullable48,49
+getName getName52,53
+type DataFieldMap DataFieldMap55,56
+toDataFieldMap toDataFieldMap57,58
+readDataField readDataField62,63
+instance FromDataField FromDataField ByteString67,68
+  fromDataField fromDataField68,69
+instance FromDataField FromDataField Integer80,81
+  fromDataField fromDataField81,82
+instance FromDataField FromDataField Int83,84
+  fromDataField fromDataField84,85
+instance FromDataField FromDataField Int6486,87
+  fromDataField fromDataField87,88
+instance FromDataField FromDataField Word89,90
+  fromDataField fromDataField90,91
+instance FromDataField FromDataField Word6492,93
+  fromDataField fromDataField93,94
+instance FromDataField FromDataField Double95,96
+  fromDataField fromDataField96,97
+instance FromDataField FromDataField Float98,99
+  fromDataField fromDataField99,100
+instance FromDataField FromDataField Scientific101,102
+  fromDataField fromDataField102,103
+instance FromDataField FromDataField Bool115,116
+  fromDataField fromDataField116,117
+instance FromDataField FromDataField UTCTime122,123
+  fromDataField fromDataField123,124
+instance FromDataField FromDataField ZonedTime137,138
+  fromDataField fromDataField138,139
+instance FromDataField FromDataField LocalTime152,153
+  fromDataField fromDataField153,154
+instance FromDataField FromDataField DiffTime157,158
+  fromDataField fromDataField158,159
+class ToDataField ToDataField166,167
+  toDataField toDataField167,168
+instance ToDataField ToDataField ByteString169,170
+  toDataField toDataField170,171
+instance ToDataField ToDataField Bool180,181
+  toDataField toDataField181,182
+instance ToDataField ToDataField Integer184,185
+  toDataField toDataField185,186
+instance ToDataField ToDataField Int194,195
+  toDataField toDataField195,196
+instance ToDataField ToDataField Int64197,198
+  toDataField toDataField198,199
+instance ToDataField ToDataField Word200,201
+  toDataField toDataField201,202
+instance ToDataField ToDataField Word64203,204
+  toDataField toDataField204,205
+instance ToDataField ToDataField Scientific206,207
+  toDataField toDataField207,208
+instance ToDataField ToDataField Double216,217
+  toDataField toDataField217,218
+instance ToDataField ToDataField Float226,227
+  toDataField toDataField227,228
+instance ToDataField ToDataField UTCTime229,230
+  toDataField toDataField230,231
+instance ToDataField ToDataField ZonedTime239,240
+  toDataField toDataField240,241
+instance ToDataField ToDataField DiffTime249,250
+  toDataField toDataField250,251
+fromByteString fromByteString254,255
+toByteString toByteString258,259
+fromDiffTime fromDiffTime262,263
+pico pico271,272
+fromDiffTime' fromDiffTime'275,276
+toDiffTime toDiffTime282,283
+toDiffTime' toDiffTime'286,287
+fromUTCTime fromUTCTime290,291
+toUTCTime toUTCTime297,298
+toUTCTimeL toUTCTimeL301,302
+fromZonedTime fromZonedTime305,306
+toZonedTime toZonedTime313,314
+fromUTCTimeD fromUTCTimeD329,330
+toUTCTimeD toUTCTimeD333,334
+singleError singleError337,338
+singleError' singleError'341,342
+class FromDataFields FromDataFields344,345
+  fromDataFields' fromDataFields'345,346
+  fromDataFields fromDataFields347,348
+instance FromDataFields FromDataFields [DataField]351,352
+  fromDataFields' fromDataFields'352,353
+instance FromDataFields FromDataFields String354,355
+  fromDataFields' fromDataFields'355,356
+
+./src/Database/Dpi/Util.hs,1741
+module Database.Dpi.Util Database.Dpi.Util9,10
+isOk isOk18,19
+data DpiExceptionDpiException21,22
+  = ErrorInfoException ErrorInfoException22,23
+  | DpiException DpiException23,24
+instance Exception Exception DpiException26,27
+class WithPtrs WithPtrs28,29
+  withPtrs withPtrs29,30
+instance Storable Storable a => WithPtrs (Ptr a)31,32
+  withPtrs withPtrs32,33
+instance (W(WithPtrs a, WithPtrs b) => WithPtrs (a, b)34,35
+  withPtrs withPtrs35,36
+class Monad m => Return Return37,38
+  re re38,39
+instance Monad Monad m => Return m (m a)40,41
+  re re41,42
+instance (M(Monad m, Return m r) => Return m (b -> r)43,44
+  re re44,45
+class ToString ToString46,47
+  toString toString47,48
+instance ToString ToString String49,50
+  toString toString50,51
+instance ToString ToString ByteString52,53
+   toString toString53,54
+inVar inVar56,57
+inCxtPtr inCxtPtr60,61
+inStr inStr64,65
+inStrLen inStrLen68,69
+inInt inInt72,73
+inEnum inEnum76,77
+inBool inBool80,81
+inPtr inPtr84,85
+outBool outBool88,89
+setString setString92,93
+getContextError getContextError101,102
+throwContextError throwContextError105,106
+outValue outValue109,110
+outValue' outValue'113,114
+runIndex runIndex120,121
+out2Value out2Value128,129
+out3Value out3Value135,136
+out4Value out4Value144,145
+outCxtPtr outCxtPtr150,151
+runBool runBool154,155
+runInt runInt158,159
+rreaybeInt rreaybeInt162,163
+runByteString runByteString166,167
+runVar runVar170,171
+runMaybeVar runMaybeVar174,175
+peekWithCxt peekWithCxt178,179
+peekInt peekInt182,183
+peekBool peekBool186,187
+peekEnum peekEnum190,191
+peekCStrLen peekCStrLen196,197
+peekMaybeCStrLen peekMaybeCStrLen200,201
+_get _get205,206
+
+./src/Database/Dpi.hs,10378
+main main20,21
+module Database.DpiDatabase.Dpi32,33
+createContext createContext142,143
+destroyContext destroyContext153,154
+withContext withContext157,158
+getClientVersion getClientVersion164,165
+data OracleConfig OracleConfig178,179
+data OracleConfig = OracleConfigOracleConfig178,179
+  { username username179,180
+  , password password180,181
+  , connstr connstr181,182
+  , connectionCreateMode connectionCreateMode182,183
+defaultOracle defaultOracle191,192
+type SQL SQL194,195
+createConnection createConnection205,206
+closeConnection closeConnection217,218
+releaseConnection releaseConnection225,226
+commitConnection commitConnection230,231
+rollbackConnection rollbackConnection235,236
+pingConnection pingConnection240,241
+withConnection withConnection250,251
+beginDistributedTransaction beginDistributedTransaction265,266
+prepareDistributedTransaction prepareDistributedTransaction274,275
+getCurrentSchema getCurrentSchema281,282
+setCurrentSchema setCurrentSchema290,291
+getEdition getEdition295,296
+getExternalName getExternalName300,301
+setExternalName setExternalName305,306
+getInternalName getInternalName310,311
+setInternalName setInternalName315,316
+getLTXID getLTXID322,323
+getServerVersion getServerVersion327,328
+getObjectType getObjectType336,337
+getEncodingInfo getEncodingInfo347,348
+getStmtCacheSize getStmtCacheSize352,353
+setStmtCacheSize setStmtCacheSize357,358
+setClientInfo setClientInfo364,365
+setClientIdentifier setClientIdentifier371,372
+setAction setAction377,378
+setDbOp setDbOp384,385
+setModule setModule391,392
+getHandler getHandler396,397
+connectionAddRef connectionAddRef405,406
+breakException breakException410,411
+changePassword changePassword421,422
+shutdownDatabase shutdownDatabase440,441
+startupDatabase startupDatabase450,451
+acquiredConnection acquiredConnection461,462
+poolAddRef poolAddRef467,468
+createPool createPool479,480
+closePool closePool491,492
+releasePool releasePool498,499
+withPool withPool508,509
+withPoolConnection withPoolConnection515,516
+getPoolBusyCount getPoolBusyCount520,521
+getPoolEncodingInfo getPoolEncodingInfo527,528
+getPoolMode getPoolMode532,533
+getPoolMaxLifetimeSession getPoolMaxLifetimeSession539,540
+getPoolOpenCount getPoolOpenCount544,545
+getPoolStmtCacheSize getPoolStmtCacheSize549,550
+getPoolTimeout getPoolTimeout555,556
+getPoolWaitTimeout getPoolWaitTimeout563,564
+setPoolGetMode setPoolGetMode568,569
+setPoolMaxLifetimeSession setPoolMaxLifetimeSession575,576
+setPoolStmtCacheSize setPoolStmtCacheSize583,584
+setPoolTimeout setPoolTimeout592,593
+setPoolWaitTimeout setPoolWaitTimeout603,604
+prepareStatement prepareStatement629,630
+closeStatement closeStatement651,652
+releaseStatement releaseStatement658,659
+withStatement withStatement672,673
+scrollStatement scrollStatement681,682
+statementAddRef statementAddRef688,689
+bindByName bindByName701,702
+bindByPosition bindByPosition717,718
+bindValueByName bindValueByName732,733
+bindValueByPosition bindValueByPosition752,753
+define define769,770
+defineValue defineValue795,796
+getBindCount getBindCount809,810
+getBindNames getBindNames814,815
+getStatementInfo getStatementInfo831,832
+getFetchArraySize getFetchArraySize836,837
+setFetchArraySize setFetchArraySize845,846
+getImplicitResult getImplicitResult854,855
+getNumberQueryColumns getNumberQueryColumns859,860
+getQueryInfo getQueryInfo868,869
+getQueryValue getQueryValue882,883
+executeStatement executeStatement900,901
+executeMany executeMany904,905
+fetch fetch914,915
+type PageOffset PageOffset925,926
+type PageLimit PageLimit926,927
+type Page Page927,928
+type FetchRows FetchRows928,929
+fetchRows fetchRows940,941
+getRowCount getRowCount961,962
+getRowCounts getRowCounts968,969
+getSubscrQueryId getSubscrQueryId982,983
+getBatchErrorCount getBatchErrorCount986,987
+getBatchErrors getBatchErrors990,991
+lobAddRef lobAddRef1013,1014
+newTempLob newTempLob1019,1020
+closeLob closeLob1028,1029
+releaseLob releaseLob1036,1037
+trimLob trimLob1041,1042
+closeLobResource closeLobResource1048,1049
+openLobResource openLobResource1057,1058
+isLobResourceOpen isLobResourceOpen1063,1064
+copyLob copyLob1069,1070
+getLobBufferSize getLobBufferSize1075,1076
+getLobChunkSize getLobChunkSize1083,1084
+getLobDirectoryAndFileName getLobDirectoryAndFileName1088,1089
+setLobDirectoryAndFileName setLobDirectoryAndFileName1103,1104
+lobFileExists lobFileExists1112,1113
+getLobSize getLobSize1118,1119
+setLobFromBytes setLobFromBytes1124,1125
+type BufferSize BufferSize1130,1131
+readLobBytes readLobBytes1134,1135
+writeLobBytes writeLobBytes1150,1151
+createObject createObject1167,1168
+releaseObject releaseObject1174,1175
+objectAddRef objectAddRef1181,1182
+objectAppendElement objectAppendElement1186,1187
+copyObject copyObject1196,1197
+trimObject trimObject1201,1202
+objectDeleteElementByIndex objectDeleteElementByIndex1211,1212
+setObjectAttributeValue setObjectAttributeValue1219,1220
+getObjectAttributeValue getObjectAttributeValue1226,1227
+getObjectElementExistsByIndex getObjectElementExistsByIndex1235,1236
+setObjectElementValueByIndex setObjectElementValueByIndex1243,1244
+getObjectElementValueByIndex getObjectElementValueByIndex1250,1251
+getObjectFirstIndex getObjectFirstIndex1259,1260
+getObjectLastIndex getObjectLastIndex1264,1265
+getObjectNextIndex getObjectNextIndex1269,1270
+getObjectPrevIndex getObjectPrevIndex1274,1275
+getObjectSize getObjectSize1279,1280
+getObjectAttrInfo getObjectAttrInfo1291,1292
+objectAttrAddRef objectAttrAddRef1298,1299
+releaseObjectAttr releaseObjectAttr1305,1306
+objectTypeAddRef objectTypeAddRef1321,1322
+releaseObjectType releaseObjectType1328,1329
+getObjectTypeAttributes getObjectTypeAttributes1333,1334
+getObjectTypeInfo getObjectTypeInfo1342,1343
+rowidAddRef rowidAddRef1354,1355
+releaseRowid releaseRowid1361,1362
+rowidGetStringValue rowidGetStringValue1366,1367
+getBool getBool1378,1379
+setBool setBool1382,1383
+getBytes getBytes1386,1387
+setBytes setBytes1392,1393
+getDouble getDouble1396,1397
+setDouble setDouble1402,1403
+getFloat getFloat1406,1407
+setFloat setFloat1412,1413
+getInt64 getInt641416,1417
+setInt64 setInt641420,1421
+getUint64 getUint641424,1425
+setUint64 setUint641428,1429
+getIntervalDs getIntervalDs1432,1433
+setIntervalDs setIntervalDs1436,1437
+getIntervalYm getIntervalYm1441,1442
+setIntervalYm setIntervalYm1445,1446
+getLob getLob1449,1450
+setLob setLob1453,1454
+getObject getObject1457,1458
+setObject setObject1461,1462
+getStmt getStmt1465,1466
+setStmt setStmt1469,1470
+getTimestamp getTimestamp1473,1474
+setTimestamp setTimestamp1477,1478
+newVar newVar1492,1493
+newVar newVar1509,1510
+varAddRef varAddRef1530,1531
+releaseVar releaseVar1537,1538
+copyVar copyVar1542,1543
+getVarData getVarData1555,1556
+getVarReturnedData getVarReturnedData1571,1572
+getVarElementsSize getVarElementsSize1583,1584
+getVarSizeInBytes getVarSizeInBytes1588,1589
+setVarFromBytes setVarFromBytes1595,1596
+setVarFromLob setVarFromLob1604,1605
+setVarFromObject setVarFromObject1609,1610
+setVarFromRowid setVarFromRowid1614,1615
+setVarFromStatement setVarFromStatement1619,1620
+setVarNumberOfElements setVarNumberOfElements1624,1625
+newDeqOptions newDeqOptions1637,1638
+deqObject deqObject1649,1650
+releaseDeqOptions releaseDeqOptions1661,1662
+deqOptionsAddRef deqOptionsAddRef1668,1669
+getDeqOptionsCondition getDeqOptionsCondition1674,1675
+setDeqOptionsCondition setDeqOptionsCondition1683,1684
+getDeqOptionsConsumerName getDeqOptionsConsumerName1689,1690
+setDeqOptionsConsumerName setDeqOptionsConsumerName1695,1696
+getDeqOptionsCorrelation getDeqOptionsCorrelation1701,1702
+setDeqOptionsCorrelation setDeqOptionsCorrelation1708,1709
+getDeqOptionsMode getDeqOptionsMode1713,1714
+setDeqOptionsMode setDeqOptionsMode1718,1719
+getDeqOptionsMsgId getDeqOptionsMsgId1723,1724
+setDeqOptionsMsgId setDeqOptionsMsgId1728,1729
+getDeqOptionsNavigation getDeqOptionsNavigation1733,1734
+setDeqOptionsNavigation setDeqOptionsNavigation1738,1739
+getDeqOptionsTransformation getDeqOptionsTransformation1744,1745
+setDeqOptionsTransformation setDeqOptionsTransformation1751,1752
+getDeqOptionsVisibility getDeqOptionsVisibility1756,1757
+setDeqOptionsVisibility setDeqOptionsVisibility1761,1762
+getDeqOptionsWait getDeqOptionsWait1767,1768
+setDeqOptionsWait setDeqOptionsWait1772,1773
+setDeqOptionsDeliveryMode setDeqOptionsDeliveryMode1777,1778
+newEnqOptions newEnqOptions1789,1790
+enqObject enqObject1801,1802
+enqOptionsAddRef enqOptionsAddRef1813,1814
+releaseEnqOptions releaseEnqOptions1820,1821
+getEnqOptionsTransformation getEnqOptionsTransformation1826,1827
+setEnqOptionsTransformation setEnqOptionsTransformation1833,1834
+getEnqOptionsVisibility getEnqOptionsVisibility1838,1839
+setEnqOptionsVisibility setEnqOptionsVisibility1843,1844
+setEnqOptionsDeliveryMode setEnqOptionsDeliveryMode1848,1849
+newMsgProps newMsgProps1862,1863
+msgPropsAddRef msgPropsAddRef1869,1870
+releaseMsgProps releaseMsgProps1876,1877
+getMsgPropsCorrelation getMsgPropsCorrelation1881,1882
+setMsgPropsCorrelation setMsgPropsCorrelation1888,1889
+getMsgPropsNumAttempts getMsgPropsNumAttempts1893,1894
+getMsgPropsDelay getMsgPropsDelay1898,1899
+setMsgPropsDelay setMsgPropsDelay1907,1908
+getMsgPropsDeliveryMode getMsgPropsDeliveryMode1912,1913
+getMsgPropsEnqTime getMsgPropsEnqTime1917,1918
+getMsgPropsExceptionQ getMsgPropsExceptionQ1923,1924
+setMsgPropsExceptionQ setMsgPropsExceptionQ1930,1931
+getMsgPropsExpiration getMsgPropsExpiration1936,1937
+setMsgPropsExpiration setMsgPropsExpiration1945,1946
+getMsgPropsOriginalMsgId getMsgPropsOriginalMsgId1951,1952
+setMsgPropsOriginalMsgId setMsgPropsOriginalMsgId1956,1957
+getMsgPropsPriority getMsgPropsPriority1962,1963
+setMsgPropsPriority setMsgPropsPriority1968,1969
+getMsgPropsState getMsgPropsState1973,1974
+newSubscr newSubscr1992,1993
+subscribe subscribe2010,2011
+unsubscribe unsubscribe2020,2021
+subscrAddRef subscrAddRef2027,2028
+closeSubscr closeSubscr2034,2035
+releaseSubscr releaseSubscr2043,2044
+subscrPrepareStatement subscrPrepareStatement2054,2055
