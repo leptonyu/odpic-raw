@@ -578,12 +578,11 @@ data DataValue
   deriving Show
 
 {-# INLINE newData #-}
-newData :: DataValue -> IO (NativeTypeNum, OracleTypeNum, PtrData)
-newData d = do
-  pd <- calloc
+newData :: PtrData -> DataValue -> IO (NativeTypeNum, OracleTypeNum)
+newData pd d = do
   let (tp,ot) = go d
   poke pd (Data $ \_ _ -> return d)
-  return (tp, ot, pd)
+  return (tp, ot)
   where
     {-# INLINE go #-}
     go (DataNull          t) = (t,                    OracleTypeBoolean      )

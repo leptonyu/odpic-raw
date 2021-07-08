@@ -731,12 +731,15 @@ bindValueByName
                    -- Once the statement has been executed, this new variable will be released.
   -> IO Bool
 bindValueByName (_,p) name dv = do
-  (ntn, _, dt) <- newData dv
-  libStmtBindValueByName p
-    & inStrLen name
-    & inEnum ntn
-    & inVar dt
-    & outBool
+  pd <- calloc
+  (ntn, _) <- newData pd dv
+  bool <- libStmtBindValueByName p
+            & inStrLen name
+            & inEnum ntn
+            & inVar pd
+            & outBool
+  free pd
+  pure bool
 
 -- | Binds a value to a placeholder in the statement without the need to create a variable directly.
 -- One is created implicitly and released when the statement is released or a new value is bound to the same position.
@@ -751,12 +754,15 @@ bindValueByPosition
                    -- Once the statement has been executed, this new variable will be released.
   -> IO Bool
 bindValueByPosition (_,p) pos dv = do
-  (ntn, _, dt) <- newData dv
-  libStmtBindValueByPos p
-    & inInt pos
-    & inEnum ntn
-    & inVar dt
-    & outBool
+  pd <- calloc
+  (ntn, _) <- newData pd dv
+  bool <- libStmtBindValueByPos p
+            & inInt pos
+            & inEnum ntn
+            & inVar pd
+            & outBool
+  free pd
+  pure bool
 
 -- | Defines the variable that will be used to fetch rows from the statement.
 -- A reference to the variable will be retained until the next define is performed on the same position
@@ -1219,8 +1225,11 @@ objectDeleteElementByIndex (_,p) pos
 {-# INLINE setObjectAttributeValue #-}
 setObjectAttributeValue :: PtrObject -> PtrObjectAttr -> DataValue -> IO Bool
 setObjectAttributeValue (_,p) (_,poa) v = do
-  (ntn, _, pd) <- newData v
-  libObjectSetAttributeValue p poa & inEnum ntn & inVar pd & outBool
+  pd <- calloc
+  (ntn, _) <- newData pd v
+  bool <- libObjectSetAttributeValue p poa & inEnum ntn & inVar pd & outBool
+  free pd
+  pure bool
 
 -- | Returns the value of one of the object’s attributes.
 {-# INLINE getObjectAttributeValue #-}
@@ -1243,8 +1252,11 @@ getObjectElementExistsByIndex (cxt,p) ind
 {-# INLINE setObjectElementValueByIndex #-}
 setObjectElementValueByIndex :: PtrObject -> Int -> DataValue -> IO Bool
 setObjectElementValueByIndex (_,p) ind v = do
-  (ntn, _, pd) <- newData v
-  libObjectSetElementValueByIndex p & inInt ind & inEnum ntn & inVar pd & outBool
+  pd <- calloc
+  (ntn, _) <- newData pd v
+  bool <- libObjectSetElementValueByIndex p & inInt ind & inEnum ntn & inVar pd & outBool
+  free pd
+  pure bool
 
 -- | Returns the value of the element found at the specified index.
 {-# INLINE getObjectElementValueByIndex #-}
