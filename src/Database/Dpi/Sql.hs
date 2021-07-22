@@ -88,4 +88,4 @@ queryAsRes conn sql ps = do
 queryByPage :: FromDataFields a => PtrConn -> SQL -> [SqlParam] -> Page -> IO [a]
 queryByPage conn sql ps (offset,limit) = do
   let sql' = sql <> " OFFSET " <> show offset <> " ROWS FETCH NEXT " <> show limit <> " ROWS ONLY"
-  with (queryAsRes conn sql' ps) (\a -> runConduit $ a .| CL.fold (flip (:)) [])
+  with (queryAsRes conn sql' ps) (\conduit -> runConduit $ conduit .| CL.consume)
