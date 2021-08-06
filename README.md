@@ -38,3 +38,16 @@ More Documents:
 
  * [Hackage](https://hackage.haskell.org/package/odpic-raw)
  * [ODPI-C](https://oracle.github.io/odpi/doc/)
+
+# Changes on this fork
+
+Changes on this forked version of `odpic-raw` include:
+- replacing `malloc` with `calloc` to workaround a deficiency in the `Storable` instance for `Data` (where `isNull` was not appropriately being set to `0`): commit [here](https://github.com/liminalisht/odpic-raw/commit/32e8e739292f303aac127e64681b3d0e01cb45c3)
+- moving calls to `malloc`/`calloc` to sites where they could be accompanied by appropriate calls to `free` to avoid space leaks: PR [here](https://github.com/liminalisht/odpic-raw/pull/1)
+- amending `queryByPage` to return records in the appropriate order: PR [here](https://github.com/liminalisht/odpic-raw/pull/2)
+- amending `Data`'s `Storable` instance to use `ODPI-C`'s `lib*` helper functions (that inter alia correctly set `isNull` to `0` when appropriate): PR [here](https://github.com/liminalisht/odpic-raw/pull/3)
+- adding a 'withConnectionFromPool' function that calls `closeConnection` rather than `releaseConnection` after performing the desired db action: PR [here](https://github.com/liminalisht/odpic-raw/pull/4)
+
+Several of the changes made on our fork have been submitted as PRs upstream:
+- [bug: replace malloc with calloc and fix potential space leaks](https://github.com/leptonyu/odpic-raw/pull/20)
+- [bug: fix bug where queryByPage would return rows in the opposite of the intended order](https://github.com/leptonyu/odpic-raw/pull/19)
