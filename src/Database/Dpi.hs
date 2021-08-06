@@ -516,6 +516,12 @@ withPool p conf hpcp
 withPoolConnection :: PtrPool -> (PtrConn -> IO a) -> IO a
 withPoolConnection p = bracket (acquiredConnection p) releaseConnection
 
+-- | Acquires a connection from the pool, calling 'closeConnection' after the action.
+--   Compare with 'withPoolConnection', which calls 'releaseConnection' after the action.
+{-# INLINE withConnectionFromPool #-}
+withConnectionFromPool :: PtrPool -> (PtrConn -> IO a) -> IO a
+withConnectionFromPool p = bracket (acquiredConnection p) (closeConnection ModeConnCloseDefault)
+
 -- | Returns the number of sessions in the pool that are busy.
 {-# INLINE getPoolBusyCount #-}
 getPoolBusyCount :: PtrPool -> IO Int
