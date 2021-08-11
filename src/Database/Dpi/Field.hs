@@ -263,7 +263,8 @@ toByteString Data_Bytes{..} = B.packCStringLen bytes
 fromDiffTime :: DiffTime -> Data_IntervalDS
 fromDiffTime dt =
   let dts           = diffTimeToPicoseconds dt
-      (r1,fseconds) = dts `divMod` pico
+      (r1,picos)    = dts `divMod` pico
+      fseconds      = picoToNano picos
       (r2,seconds)  = r1  `divMod` 60
       (r3,minutes)  = r2  `divMod` 60
       (days,hours)  = r3  `divMod` 24
@@ -271,6 +272,15 @@ fromDiffTime dt =
 
 pico :: Integer
 pico = (10 :: Integer) ^ (12 :: Integer)
+
+nano :: Integer
+nano = (10 :: Integer) ^ (9 :: Integer)
+
+picoToNano :: Integer -> Integer
+picoToNano picos = picos `div` ((10 :: Integer) ^ (3 :: Integer))
+
+nanoToPico :: Integer -> Integer
+nanoToPico nanos = nanos * ((10 :: Integer) ^ (3 :: Integer))
 
 {-# INLINE fromDiffTime' #-}
 fromDiffTime' :: DiffTime -> Data_IntervalYM
@@ -281,7 +291,7 @@ fromDiffTime' dt =
 
 {-# INLINE toDiffTime #-}
 toDiffTime :: Data_IntervalDS -> DiffTime
-toDiffTime Data_IntervalDS{..} = picosecondsToDiffTime $ toInteger fseconds + pico * (toInteger seconds + 60 * (toInteger minutes + 60 * (toInteger hours + 24 * toInteger days)))
+toDiffTime Data_IntervalDS{..} = picosecondsToDiffTime . nanoToPico $ toInteger fseconds + nano * (toInteger seconds + 60 * (toInteger minutes + 60 * (toInteger hours + 24 * toInteger days)))
 
 {-# INLINE toDiffTime' #-}
 toDiffTime' :: Data_IntervalYM -> DiffTime
@@ -383,4 +393,3 @@ instance FromDataFields String where
       go2 v (DataTimestampLtz  _) = go3 (fromDataField v :: IO (Maybe ZonedTime)  )
       go2 v (DataTimestampTz   _) = go3 (fromDataField v :: IO (Maybe ZonedTime)  )
       go2 _ _                     = return ""
-
