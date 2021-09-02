@@ -42,28 +42,28 @@ defaultDriverName = {#const DPI_DEFAULT_DRIVER_NAME #}
   , DPI_MODE_AUTH_SYSKMT  as ModeAuthSyskmt
   , DPI_MODE_AUTH_SYSRAC  as ModeAuthSysrac
   } deriving (Eq, Show) #}
-{#enum define ConnCloseMode       
+{#enum define ConnCloseMode
   { DPI_MODE_CONN_CLOSE_DEFAULT as ModeConnCloseDefault
   , DPI_MODE_CONN_CLOSE_DROP    as ModeConnCloseDrop
   , DPI_MODE_CONN_CLOSE_RETAG   as ModeConnCloseRetag
   } deriving (Eq, Show) #}
-{#enum define CreateMode          
+{#enum define CreateMode
   { DPI_MODE_CREATE_DEFAULT  as ModeCreateDefault
   , DPI_MODE_CREATE_THREADED as ModeCreateThreaded
   , DPI_MODE_CREATE_EVENTS   as ModeCreateEvents
   } deriving (Eq, Show) #}
-{#enum define DeqMode             
+{#enum define DeqMode
   { DPI_MODE_DEQ_BROWSE         as ModeDeqBrowse
   , DPI_MODE_DEQ_LOCKED         as ModeDeqLocked
   , DPI_MODE_DEQ_REMOVE         as ModeDeqRemove
   , DPI_MODE_DEQ_REMOVE_NO_DATA as ModeDeqRemove_no_data
   } deriving (Eq, Show) #}
-{#enum define DeqNavigation       
+{#enum define DeqNavigation
   { DPI_DEQ_NAV_FIRST_MSG        as DeqNavFirstMsg
   , DPI_DEQ_NAV_NEXT_TRANSACTION as DeqNavNextTransaction
   , DPI_DEQ_NAV_NEXT_MSG         as DeqNavNextMsg
   } deriving (Eq, Show) #}
-{#enum define EventType           
+{#enum define EventType
   { DPI_EVENT_NONE         as EventNone
   , DPI_EVENT_STARTUP      as EventStartup
   , DPI_EVENT_SHUTDOWN     as EventShutdown
@@ -74,7 +74,7 @@ defaultDriverName = {#const DPI_DEFAULT_DRIVER_NAME #}
   , DPI_EVENT_QUERYCHANGE  as EventQuerychange
   , DPI_EVENT_AQ           as EventAq
   } deriving (Eq, Show) #}
-{#enum define ExecMode            
+{#enum define ExecMode
   { DPI_MODE_EXEC_DEFAULT             as ModeExecDefault
   , DPI_MODE_EXEC_DESCRIBE_ONLY       as ModeExecDescribeOnly
   , DPI_MODE_EXEC_COMMIT_ON_SUCCESS   as ModeExecCommitOnSuccess
@@ -82,7 +82,7 @@ defaultDriverName = {#const DPI_DEFAULT_DRIVER_NAME #}
   , DPI_MODE_EXEC_PARSE_ONLY          as ModeExecParseOnly
   , DPI_MODE_EXEC_ARRAY_DML_ROWCOUNTS as ModeExecArrayDmlRowcounts
   } deriving (Eq, Show) #}
-{#enum define FetchMode           
+{#enum define FetchMode
   { DPI_MODE_FETCH_NEXT     as ModeFetchNext
   , DPI_MODE_FETCH_FIRST    as ModeFetchFirst
   , DPI_MODE_FETCH_LAST     as ModeFetchLast
@@ -90,18 +90,18 @@ defaultDriverName = {#const DPI_DEFAULT_DRIVER_NAME #}
   , DPI_MODE_FETCH_ABSOLUTE as ModeFetchAbsolute
   , DPI_MODE_FETCH_RELATIVE as ModeFetchRelative
   } deriving (Eq, Show) #}
-{#enum define MessageDeliveryMode 
+{#enum define MessageDeliveryMode
   { DPI_MODE_MSG_PERSISTENT             as ModeMsgPersistent
   , DPI_MODE_MSG_BUFFERED               as ModeMsgBuffered
   , DPI_MODE_MSG_PERSISTENT_OR_BUFFERED as ModeMsgPersistentOrBuffered
   } deriving (Eq, Show) #}
-{#enum define MessageState        
+{#enum define MessageState
   { DPI_MSG_STATE_READY     as MsgStateReady
   , DPI_MSG_STATE_WAITING   as MsgStateWaiting
   , DPI_MSG_STATE_PROCESSED as MsgStateProcessed
   , DPI_MSG_STATE_EXPIRED   as MsgStateExpired
   } deriving (Eq, Show) #}
-{#enum define NativeTypeNum       
+{#enum define NativeTypeNum
   { DPI_NATIVE_TYPE_INT64       as NativeTypeInt64
   , DPI_NATIVE_TYPE_UINT64      as NativeTypeUint64
   , DPI_NATIVE_TYPE_FLOAT       as NativeTypeFloat
@@ -116,7 +116,7 @@ defaultDriverName = {#const DPI_DEFAULT_DRIVER_NAME #}
   , DPI_NATIVE_TYPE_BOOLEAN     as NativeTypeBoolean
   , DPI_NATIVE_TYPE_ROWID       as NativeTypeRowid
   } deriving (Eq, Show) #}
-{#enum define OpCode              
+{#enum define OpCode
   { DPI_OPCODE_ALL_OPS  as OpCodeAllOps
   , DPI_OPCODE_ALL_ROWS as OpCodeAllRows
   , DPI_OPCODE_INSERT   as OpCodeInsert
@@ -126,7 +126,7 @@ defaultDriverName = {#const DPI_DEFAULT_DRIVER_NAME #}
   , DPI_OPCODE_DROP     as OpCodeDrop
   , DPI_OPCODE_UNKNOWN  as OpCodeUnknown
   } deriving (Eq, Show) #}
-{#enum define OracleTypeNum       
+{#enum define OracleTypeNum
   { DPI_ORACLE_TYPE_VARCHAR       as OracleTypeVarchar
   , DPI_ORACLE_TYPE_NVARCHAR      as OracleTypeNvarchar
   , DPI_ORACLE_TYPE_CHAR          as OracleTypeChar
@@ -154,22 +154,22 @@ defaultDriverName = {#const DPI_DEFAULT_DRIVER_NAME #}
   , DPI_ORACLE_TYPE_LONG_VARCHAR  as OracleTypeLongVarchar
   , DPI_ORACLE_TYPE_LONG_RAW      as OracleTypeLongRaw
   } deriving (Eq, Show) #}
-{#enum define PoolCloseMode       
+{#enum define PoolCloseMode
   { DPI_MODE_POOL_CLOSE_DEFAULT as ModePoolCloseDefault
   , DPI_MODE_POOL_CLOSE_FORCE   as ModePoolCloseForce
   } deriving (Eq, Show) #}
-{#enum define PoolGetMode         
+{#enum define PoolGetMode
   { DPI_MODE_POOL_GET_WAIT      as ModePoolGetWait
   , DPI_MODE_POOL_GET_NOWAIT    as ModePoolGetNowait
   , DPI_MODE_POOL_GET_FORCEGET  as ModePoolGetForceget
   , DPI_MODE_POOL_GET_TIMEDWAIT as ModePoolGetTimedwait
   } deriving (Eq, Show) #}
-{#enum define Purity              
+{#enum define Purity
   { DPI_PURITY_DEFAULT as PurityDefault
   , DPI_PURITY_NEW     as PurityNew
   , DPI_PURITY_SELF    as PuritySelf
   } deriving (Eq, Show) #}
-{#enum define ShutdownMode        
+{#enum define ShutdownMode
   { DPI_MODE_SHUTDOWN_DEFAULT             as ModeShutdownDefault
   , DPI_MODE_SHUTDOWN_TRANSACTIONAL       as ModeShutdownTransactional
   , DPI_MODE_SHUTDOWN_TRANSACTIONAL_LOCAL as ModeShutdownTransactionalLocal
@@ -177,18 +177,18 @@ defaultDriverName = {#const DPI_DEFAULT_DRIVER_NAME #}
   , DPI_MODE_SHUTDOWN_ABORT               as ModeShutdownAbort
   , DPI_MODE_SHUTDOWN_FINAL               as ModeShutdownFinal
   } deriving (Eq, Show) #}
-{#enum define SodaFlags         
+{#enum define SodaFlags
   { DPI_SODA_FLAGS_DEFAULT          as SodaFlagsDefault
   , DPI_SODA_FLAGS_ATOMIC_COMMIT    as SodaFlagsAtomicCommit
   , DPI_SODA_FLAGS_CREATE_COLL_MAP  as SodaFlagsCreateCollMap
   , DPI_SODA_FLAGS_INDEX_DROP_FORCE as SodaFlagsIndexDropForce
   } deriving (Eq, Show) #}
-{#enum define StartupMode         
+{#enum define StartupMode
   { DPI_MODE_STARTUP_DEFAULT  as ModeStartupDefault
   , DPI_MODE_STARTUP_FORCE    as ModeStartupForce
   , DPI_MODE_STARTUP_RESTRICT as ModeStartupRestrict
   } deriving (Eq, Show) #}
-{#enum define StatementType       
+{#enum define StatementType
   { DPI_STMT_TYPE_UNKNOWN      as StmtTypeUnknown
   , DPI_STMT_TYPE_SELECT       as StmtTypeSelect
   , DPI_STMT_TYPE_UPDATE       as StmtTypeUpdate
@@ -205,24 +205,24 @@ defaultDriverName = {#const DPI_DEFAULT_DRIVER_NAME #}
   , DPI_STMT_TYPE_COMMIT       as StmtTypeCommit
   , DPI_STMT_TYPE_ROLLBACK     as StmtTypeRollback
   } deriving (Eq, Show) #}
-{#enum define SubscrNamespace     
+{#enum define SubscrNamespace
   { DPI_SUBSCR_NAMESPACE_AQ       as SubscrNamespaceAq
   , DPI_SUBSCR_NAMESPACE_DBCHANGE as SubscrNamespaceDbchange
   } deriving (Eq, Show) #}
-{#enum define SubscrProtocol      
+{#enum define SubscrProtocol
   { DPI_SUBSCR_PROTO_CALLBACK as SubscrProtoCallback
   , DPI_SUBSCR_PROTO_MAIL     as SubscrProtoMail
   , DPI_SUBSCR_PROTO_PLSQL    as SubscrProtoPlsql
   , DPI_SUBSCR_PROTO_HTTP     as SubscrProtoHttp
   } deriving (Eq, Show) #}
-{#enum define SubscrQOS           
+{#enum define SubscrQOS
   { DPI_SUBSCR_QOS_RELIABLE    as SubscrQosReliable
   , DPI_SUBSCR_QOS_DEREG_NFY   as SubscrQosDeregNfy
   , DPI_SUBSCR_QOS_ROWIDS      as SubscrQosRowids
   , DPI_SUBSCR_QOS_QUERY       as SubscrQosQuery
   , DPI_SUBSCR_QOS_BEST_EFFORT as SubscrQosBestEffort
   } deriving (Eq, Show) #}
-{#enum define Visibility          
+{#enum define Visibility
   { DPI_VISIBILITY_IMMEDIATE as VisibilityImmediate
   , DPI_VISIBILITY_ON_COMMIT as VisibilityOnCommit
   } deriving (Eq, Show) #}
@@ -253,10 +253,10 @@ defaultDriverName = {#const DPI_DEFAULT_DRIVER_NAME #}
 #endif
 
 #if DPI_VERSION_NUMBER >= 20400
-{#enum define SubscrGroupingClass 
+{#enum define SubscrGroupingClass
   { DPI_SUBSCR_GROUPING_CLASS_TIME as SubscrGroupingClassTime
   } deriving (Eq, Show) #}
-{#enum define SubscrGroupingType  
+{#enum define SubscrGroupingType
   { DPI_SUBSCR_GROUPING_TYPE_SUMMARY as SubscrGroupingTypeSummary
   , DPI_SUBSCR_GROUPING_TYPE_LAST    as SubscrGroupingTypeLast
   } deriving (Eq, Show) #}
@@ -578,12 +578,11 @@ data DataValue
   deriving Show
 
 {-# INLINE newData #-}
-newData :: DataValue -> IO (NativeTypeNum, OracleTypeNum, PtrData)
-newData d = do
-  pd <- malloc
+newData :: PtrData -> DataValue -> IO (NativeTypeNum, OracleTypeNum)
+newData pd d = do
   let (tp,ot) = go d
   poke pd (Data $ \_ _ -> return d)
-  return (tp, ot, pd)
+  return (tp, ot)
   where
     {-# INLINE go #-}
     go (DataNull          t) = (t,                    OracleTypeBoolean      )
@@ -1236,7 +1235,7 @@ instance Storable Data_VersionInfo where
     fullVersionNum <- {#get VersionInfo -> fullVersionNum #} p
     return Data_VersionInfo {..}
 
-#if DPI_MAJOR_VERSION >= 3 
+#if DPI_MAJOR_VERSION >= 3
 version_3 = True
 #else
 version_3 = False
