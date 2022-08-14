@@ -1,6 +1,9 @@
 # Changelog
 
-Recent changes include:
+## 2022-04-08:
+- calling `releaseConnection` in `withConnectionFromPool` to eliminate a memory leak
+
+## 2021-12-16:
 - replacing `malloc` with `calloc` to workaround a deficiency in the `Storable` instance for `Data` (where `isNull` was not appropriately being set to `0`)
 - moving calls to `malloc`/`calloc` to sites where they could be accompanied by appropriate calls to `free` to avoid space leaks
 - amending `queryByPage` to return records in the appropriate order

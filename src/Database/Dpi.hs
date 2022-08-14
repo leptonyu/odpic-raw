@@ -520,7 +520,7 @@ withPoolConnection p = bracket (acquiredConnection p) releaseConnection
 --   Compare with 'withPoolConnection', which calls 'releaseConnection' after the action.
 {-# INLINE withConnectionFromPool #-}
 withConnectionFromPool :: PtrPool -> (PtrConn -> IO a) -> IO a
-withConnectionFromPool p = bracket (acquiredConnection p) (closeConnection ModeConnCloseDefault)
+withConnectionFromPool p = bracket (acquiredConnection p) (\c -> closeConnection ModeConnCloseDefault c `finally` releaseConnection c)
 
 -- | Returns the number of sessions in the pool that are busy.
 {-# INLINE getPoolBusyCount #-}
